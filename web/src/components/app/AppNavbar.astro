@@ -1,0 +1,64 @@
+---
+import { UserButton } from '@clerk/astro/components';
+
+const currentPath = Astro.url.pathname;
+---
+
+<header class="border-b border-base-300 bg-base-100">
+	<nav
+		class="mx-auto flex h-17 max-w-6xl items-center justify-between px-5 lg:px-8"
+		aria-label="Main navigation"
+	>
+		<div class="flex items-center gap-8">
+			<a
+				href="/app"
+				class="flex items-center gap-2.5 font-semibold tracking-tight"
+			>
+				<span
+					class="grid size-8 place-items-center rounded-lg bg-neutral text-sm font-bold text-neutral-content"
+				>
+					T
+				</span>
+
+				<span>Tinkertaps</span>
+			</a>
+
+			<div class="hidden items-center gap-1 sm:flex">
+				<a
+					href="/app"
+					class:list={[
+						'btn btn-sm',
+						currentPath === '/app'
+							? 'btn-ghost bg-base-200'
+							: 'btn-ghost text-base-content/55',
+					]}
+				>
+					Home
+				</a>
+
+				<a
+					href="/app/files"
+					class:list={[
+						'btn btn-sm',
+						currentPath.startsWith('/app/files')
+							? 'btn-ghost bg-base-200'
+							: 'btn-ghost text-base-content/55',
+					]}
+				>
+					Your files
+				</a>
+			</div>
+		</div>
+
+		<div class="flex items-center gap-3">
+			<a
+				href="/app/new"
+				class="btn btn-primary btn-sm"
+			>
+				Choose a file
+			</a>
+
+			<UserButton />
+		</div>
+	</nav>
+</header>

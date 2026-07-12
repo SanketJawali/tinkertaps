@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+    themes: tinkertaps --default;
+}
+
+@plugin "daisyui/theme" {
+    name: "tinkertaps";
+    default: true;
+    prefersdark: false;
+    color-scheme: light;
+
+    --color-base-100: oklch(98.5% 0.005 100);
+    --color-base-200: oklch(96% 0.008 100);
+    --color-base-300: oklch(88% 0.01 100);
+    --color-base-content: oklch(22% 0.008 100);
+
+    --color-primary: oklch(48% 0.055 28);
+    --color-primary-content: oklch(98% 0.002 120);
+
+    --color-secondary: oklch(31% 0.01 100);
+    --color-secondary-content: oklch(98% 0.005 100);
+
+    --color-accent: oklch(76% 0.025 135);
+    --color-accent-content: oklch(20% 0.006 120);
+
+    --color-neutral: oklch(25% 0.008 100);
+    --color-neutral-content: oklch(98% 0.005 100);
+
+    --color-info: oklch(60% 0.03 230);
+    --color-info-content: oklch(98% 0.005 100);
+
+    --color-success: oklch(55% 0.055 125);
+    --color-success-content: oklch(98% 0.005 100);
+
+    --color-warning: oklch(70% 0.06 80);
+    --color-warning-content: oklch(22% 0.008 100);
+
+    --color-error: oklch(52% 0.1 25);
+    --color-error-content: oklch(98% 0.005 100);
+
+    --radius-selector: 0.4rem;
+    --radius-field: 0.4rem;
+    --radius-box: 0.75rem;
+
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+@theme {
+    --font-sans:
+        "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+
+    --font-mono:
+        "Cascadia Code", "SFMono-Regular", Consolas,
+        "Liberation Mono", monospace;
+}
+
+html {
+    scroll-behavior: smooth;
+    background: var(--color-base-100);
+}
+
+body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+}
+
+::selection {
+    background: color-mix(in oklab,
+            var(--color-primary) 18%,
+            transparent);
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+}

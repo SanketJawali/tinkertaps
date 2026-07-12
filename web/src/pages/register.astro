@@ -1,0 +1,43 @@
+---
+import ClerkAuth from '../components/auth/ClerkAuth';
+
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+	title="Create an account — Tinkertaps"
+	description="Create your Tinkertaps account."
+>
+	<main
+		class="grid min-h-screen place-items-center bg-base-100 px-5 py-12 text-base-content"
+	>
+		<div class="w-full max-w-md">
+			<a
+				href="/"
+				class="mx-auto mb-10 flex w-fit items-center gap-2.5 font-semibold tracking-tight"
+			>
+				<span
+					class="grid size-8 place-items-center rounded-lg bg-neutral text-sm font-bold text-neutral-content"
+				>
+					T
+				</span>
+
+				<span>Tinkertaps</span>
+			</a>
+
+			<div class="mb-8 text-center">
+				<h1 class="text-3xl font-semibold tracking-[-0.04em]">
+					A place for your files
+				</h1>
+
+				<p class="mt-2 text-base-content/50">
+					Come back to your files when they're ready.
+				</p>
+			</div>
+
+			<div class="flex min-h-105 justify-center">
+				<ClerkAuth mode="sign-up" client:load />
+			</div>
+		</div>
+	</main>
+</Layout>
