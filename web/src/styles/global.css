@@ -10,54 +10,46 @@
     prefersdark: false;
     color-scheme: light;
 
-    --color-base-100: oklch(98.5% 0.005 100);
-    --color-base-200: oklch(96% 0.008 100);
-    --color-base-300: oklch(88% 0.01 100);
-    --color-base-content: oklch(22% 0.008 100);
+    --color-base-100: #fafaf9;
+    --color-base-200: #f3f3f1;
+    --color-base-300: #ddddda;
+    --color-base-content: #191918;
 
-    --color-primary: oklch(48% 0.055 28);
-    --color-primary-content: oklch(98% 0.002 120);
+    --color-primary: #4b5a50;
+    --color-primary-content: #ffffff;
 
-    --color-secondary: oklch(31% 0.01 100);
-    --color-secondary-content: oklch(98% 0.005 100);
+    --color-secondary: #747873;
+    --color-secondary-content: #ffffff;
 
-    --color-accent: oklch(76% 0.025 135);
-    --color-accent-content: oklch(20% 0.006 120);
+    --color-accent: #66736a;
+    --color-accent-content: #ffffff;
 
-    --color-neutral: oklch(25% 0.008 100);
-    --color-neutral-content: oklch(98% 0.005 100);
+    --color-neutral: #222220;
+    --color-neutral-content: #fafaf9;
 
-    --color-info: oklch(60% 0.03 230);
-    --color-info-content: oklch(98% 0.005 100);
+    --color-info: #687477;
+    --color-info-content: #ffffff;
 
-    --color-success: oklch(55% 0.055 125);
-    --color-success-content: oklch(98% 0.005 100);
+    --color-success: #65735f;
+    --color-success-content: #ffffff;
 
-    --color-warning: oklch(70% 0.06 80);
-    --color-warning-content: oklch(22% 0.008 100);
+    --color-warning: #9a8055;
+    --color-warning-content: #ffffff;
 
-    --color-error: oklch(52% 0.1 25);
-    --color-error-content: oklch(98% 0.005 100);
+    --color-error: #8b5f5a;
+    --color-error-content: #ffffff;
 
-    --radius-selector: 0.4rem;
-    --radius-field: 0.4rem;
+    --radius-selector: 0.5rem;
+    --radius-field: 0.375rem;
     --radius-box: 0.75rem;
 
     --size-selector: 0.25rem;
     --size-field: 0.25rem;
 
     --border: 1px;
+
     --depth: 0;
     --noise: 0;
-}
-
-@theme {
-    --font-sans:
-        "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-
-    --font-mono:
-        "Cascadia Code", "SFMono-Regular", Consolas,
-        "Liberation Mono", monospace;
 }
 
 html {

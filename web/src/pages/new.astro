@@ -1,0 +1,37 @@
+---
+import UploadFlow from '../components/upload/UploadFlow';
+import Navbar from '../components/Navbar.astro';
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+	title="Choose a file — Tinkertaps"
+	description="Choose a file and tell Tinkertaps what you need."
+>
+	<div class="min-h-screen bg-base-100 text-base-content">
+		<Navbar />
+
+		<main class="mx-auto max-w-4xl px-5 py-14 lg:px-8 lg:py-18">
+			<header>
+				<p
+					class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary"
+				>
+					A clear desk
+				</p>
+
+				<h1
+					class="mt-4 max-w-2xl text-4xl font-semibold tracking-[-0.045em] sm:text-5xl"
+				>
+					Start with the file.
+				</h1>
+
+				<p class="mt-4 max-w-xl text-lg leading-8 text-base-content/50">
+					Choose what you're working with. We'll show you what you can
+					do with it.
+				</p>
+			</header>
+
+			<UploadFlow client:load />
+		</main>
+	</div>
+</Layout>
