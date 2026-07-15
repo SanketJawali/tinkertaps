@@ -1,11 +1,15 @@
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.jobs import Job
+# from app.models.jobs import Job
+
+if TYPE_CHECKING:
+    from app.models.jobs import Job
 
 
 class User(Base):

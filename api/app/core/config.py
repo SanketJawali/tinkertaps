@@ -8,7 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Tinkertaps API"
     app_version: str = "0.1.0"
-    environment: Literal["development", "staging", "production"] = "development"
+    environment: Literal["development",
+                         "staging", "production"] = "development"
     debug: bool = False
     log_level: str = "INFO"
 
@@ -20,7 +21,11 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:4321"])
+    migration_db_user: str
+    migration_db_password: str
+
+    cors_origins: list[str] = Field(default_factory=lambda: [
+                                    "http://localhost:4321"])
     cors_allow_credentials: bool = True
 
     model_config = SettingsConfigDict(
@@ -38,6 +43,19 @@ class Settings(BaseSettings):
                 scheme="postgresql+asyncpg",
                 username=self.db_user,
                 password=self.db_password,
+                host=self.db_host,
+                port=self.db_port,
+                path=self.db_name,
+            )
+        )
+
+    @property
+    def migration_database_url(self) -> str:
+        return str(
+            PostgresDsn.build(
+                scheme="postgresql+asyncpg",
+                username=self.migration_db_user,
+                password=self.migration_db_password,
                 host=self.db_host,
                 port=self.db_port,
                 path=self.db_name,
