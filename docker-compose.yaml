@@ -17,6 +17,11 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
 
+  redis:
+    image: redis:8.8
+    ports:
+      - '6380:6379'
+
   api:
     build:
       context: ./api
@@ -36,7 +41,18 @@ services:
 
     depends_on:
       - postgres
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
 
+    restart: unless-stopped
+
+    ports:
+      - "4321:4321"
+
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

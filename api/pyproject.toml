@@ -7,11 +7,15 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.18.5",
     "asyncpg>=0.31.0",
+    "boto3>=1.43.56",
+    "botocore>=1.43.56",
     "fastapi[standard]>=0.139.0",
     "httpx>=0.28.1",
     "pydantic-settings>=2.14.2",
+    "pyjwt[crypto]>=2.13.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "redis>=8.0.1",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.50.2",
 ]

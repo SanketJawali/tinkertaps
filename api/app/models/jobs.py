@@ -4,7 +4,6 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -16,8 +15,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-# from app.models.users import User
-
 
 if TYPE_CHECKING:
     from app.models.users import User
@@ -29,6 +26,7 @@ class Operation(str, PyEnum):
 
 
 class JobStatus(str, PyEnum):
+    DRAFT = "draft"
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -38,33 +36,16 @@ class JobStatus(str, PyEnum):
 class Job(Base):
     __tablename__ = "jobs"
 
-    __table_args__ = (
-        CheckConstraint(
-            """
-            (user_id IS NOT NULL AND anonymous_id IS NULL)
-            OR
-            (user_id IS NULL AND anonymous_id IS NOT NULL)
-            """,
-            name="ck_jobs_exactly_one_identity",
-        ),
-    )
-
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
 
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=True,
-        index=True,
-    )
-
-    anonymous_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -76,7 +57,7 @@ class Job(Base):
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status"),
         nullable=False,
-        default=JobStatus.PENDING,
+        default=JobStatus.DRAFT,
         index=True,
     )
 
@@ -117,6 +98,6 @@ class Job(Base):
         nullable=True,
     )
 
-    user: Mapped["User | None"] = relationship(
+    user: Mapped["User"] = relationship(
         back_populates="jobs",
     )
