@@ -6,6 +6,7 @@ from typing import Any
 
 import boto3
 from botocore.client import BaseClient
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
 
@@ -17,15 +18,26 @@ def get_s3_client() -> BaseClient:
     if not settings.s3_bucket_name:
         raise RuntimeError("S3_BUCKET_NAME is not configured")
 
+    # Force the regional endpoint. boto3 often signs URLs against
+    # s3.amazonaws.com even when region_name is set; browsers then hit
+    # redirects / Host mismatches that show up as PUT 403.
     client_kwargs: dict[str, Any] = {
         "service_name": "s3",
         "region_name": settings.aws_region,
+        "config": Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
     }
     if settings.aws_access_key_id and settings.aws_secret_access_key:
         client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
         client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
     if settings.s3_endpoint_url:
         client_kwargs["endpoint_url"] = settings.s3_endpoint_url
+    elif settings.aws_region:
+        client_kwargs["endpoint_url"] = (
+            f"https://s3.{settings.aws_region}.amazonaws.com"
+        )
 
     return boto3.client(**client_kwargs)
 
