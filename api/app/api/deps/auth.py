@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.errors import ErrorCode, raise_api_error
 from app.db.session import get_db
 from app.models.users import User
 
@@ -32,9 +33,10 @@ def _get_jwks_client() -> PyJWKClient:
 
 def verify_clerk_token(token: str) -> dict:
     if not settings.clerk_issuer or not settings.clerk_jwks_url:
-        raise HTTPException(
+        raise_api_error(
+            code=ErrorCode.AUTH_NOT_CONFIGURED,
+            message="Clerk authentication is not configured",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Clerk authentication is not configured",
         )
 
     try:

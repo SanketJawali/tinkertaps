@@ -19,7 +19,7 @@ async def test_health_returns_ok_when_database_is_available(client: AsyncClient)
     if not await database_is_reachable():
         pytest.skip("PostgreSQL is not running; start it to run this integration test")
 
-    response = await client.get("/health")
+    response = await client.get("/api/health")
 
     assert response.status_code == 200
     body = response.json()
@@ -30,7 +30,7 @@ async def test_health_returns_ok_when_database_is_available(client: AsyncClient)
 async def test_health_returns_error_when_database_is_down(
     client_with_db_down: AsyncClient,
 ):
-    response = await client_with_db_down.get("/health")
+    response = await client_with_db_down.get("/api/health")
 
     assert response.status_code == 503
     body = response.json()

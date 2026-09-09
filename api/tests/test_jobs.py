@@ -103,7 +103,7 @@ async def test_presign_creates_draft_job_and_sets_anon_cookie(job_client):
         ),
     ) as create_mock:
         response = await client.post(
-            "/jobs/presign",
+            "/api/jobs/presign",
             json={
                 "operation": "compress",
                 "filename": "photo.png",
@@ -131,12 +131,15 @@ async def test_presign_rejects_insufficient_credits(job_client):
         new=AsyncMock(
             side_effect=HTTPException(
                 status_code=402,
-                detail="Insufficient credits to start a new job",
+                detail={
+                    "code": "insufficient_credits",
+                    "message": "Insufficient credits to start a new job",
+                },
             ),
         ),
     ):
         response = await client.post(
-            "/jobs/presign",
+            "/api/jobs/presign",
             json={
                 "operation": "convert",
                 "filename": "doc.png",
@@ -145,7 +148,9 @@ async def test_presign_rejects_insufficient_credits(job_client):
         )
 
     assert response.status_code == 402
-    assert "Insufficient credits" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "insufficient_credits"
+    assert "Insufficient credits" in detail["message"]
 
 
 async def test_start_job_verifies_upload_and_returns_credits(clerk_job_client):
@@ -164,7 +169,7 @@ async def test_start_job_verifies_upload_and_returns_credits(clerk_job_client):
         "app.api.routes.job.job_service.start_draft_job",
         new=AsyncMock(return_value=job),
     ) as start_mock:
-        response = await client.post(f"/jobs/{job_id}/start")
+        response = await client.post(f"/api/jobs/{job_id}/start")
 
     assert response.status_code == 200
     body = response.json()
@@ -183,10 +188,13 @@ async def test_start_job_not_found(clerk_job_client):
     with patch(
         "app.api.routes.job.job_service.start_draft_job",
         new=AsyncMock(
-            side_effect=HTTPException(status_code=404, detail="Job not found"),
+            side_effect=HTTPException(
+                status_code=404,
+                detail={"code": "job_not_found", "message": "Job not found"},
+            ),
         ),
     ):
-        response = await client.post(f"/jobs/{missing_id}/start")
+        response = await client.post(f"/api/jobs/{missing_id}/start")
 
     assert response.status_code == 404
 
@@ -212,6 +220,51 @@ async def test_ensure_credits_accounts_for_existing_drafts():
             await ensure_credits_for_new_draft(db, user)
 
     assert exc_info.value.status_code == 402
+    assert exc_info.value.detail["code"] == "insufficient_credits"
+
+
+async def test_presign_rejects_invalid_content_type(job_client):
+    client, _user = job_client
+
+    response = await client.post(
+        "/api/jobs/presign",
+        json={
+            "operation": "compress",
+            "filename": "photo.png",
+            "content_type": "not-a-mime-type",
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["request_id"] is not None
+    assert any(err["loc"] == ["body", "content_type"] for err in body["detail"])
+
+
+async def test_start_job_queue_unavailable(clerk_job_client):
+    from fastapi import HTTPException
+
+    client, _user = clerk_job_client
+    job_id = uuid.uuid4()
+
+    with patch(
+        "app.api.routes.job.job_service.start_draft_job",
+        new=AsyncMock(
+            side_effect=HTTPException(
+                status_code=503,
+                detail={
+                    "code": "queue_unavailable",
+                    "message": "Failed to enqueue job for processing",
+                },
+            ),
+        ),
+    ):
+        response = await client.post(f"/api/jobs/{job_id}/start")
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "queue_unavailable"
+    assert response.json()["request_id"] is not None
 
 
 async def test_build_input_key_sanitizes_filename(clerk_user: User):

@@ -4,12 +4,19 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.jobs import JobStatus, Operation
+from app.core.logging import get_logger
 
+logger = get_logger(__name__)
 
 class PresignRequest(BaseModel):
     operation: Operation
     filename: str = Field(..., min_length=1, max_length=512)
-    content_type: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[\w.+-]+/[\w.+-]+$",
+    )
 
 
 class PresignResponse(BaseModel):
@@ -22,7 +29,7 @@ class PresignResponse(BaseModel):
 class StartJobRequest(BaseModel):
     """Optional body for starting a draft job after upload completes."""
 
-    pass
+    logger.debug("StartJobRequest model initialized")
 
 
 class StartJobResponse(BaseModel):
