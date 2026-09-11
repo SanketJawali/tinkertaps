@@ -4,13 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
-from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.errors import ErrorCode
 from app.models.jobs import Job, JobStatus, Operation
 from app.models.users import User
 from app.services import jobs as job_service
-from app.services import redis_queue, s3
+from app.services import s3  # , job_queue
 
 
 def _client_error(code: str) -> ClientError:
@@ -151,7 +150,7 @@ async def test_start_draft_job_queue_failure_rolls_back(user: User, draft_job: J
     with (
         patch("app.services.jobs.s3.verify_upload_exists", new=AsyncMock()),
         patch(
-            "app.services.jobs.redis_queue.enqueue_job",
+            "app.services.jobs.job_queue.enqueue_job",
             new=AsyncMock(
                 side_effect=HTTPException(
                     status_code=503,
@@ -182,7 +181,7 @@ async def test_start_draft_job_success(user: User, draft_job: Job):
 
     with (
         patch("app.services.jobs.s3.verify_upload_exists", new=AsyncMock()),
-        patch("app.services.jobs.redis_queue.enqueue_job", new=AsyncMock()),
+        patch("app.services.jobs.job_queue.enqueue_job", new=AsyncMock()),
     ):
         job = await job_service.start_draft_job(
             db=db,
@@ -264,17 +263,18 @@ def test_s3_presign_failure_raises_storage_unavailable():
     assert exc_info.value.detail["code"] == ErrorCode.STORAGE_UNAVAILABLE
 
 
-async def test_redis_enqueue_failure_raises_queue_unavailable():
-    mock_client = AsyncMock()
-    mock_client.lpush.side_effect = RedisConnectionError("connection refused")
-
-    with patch("app.services.redis_queue.get_redis_client", return_value=mock_client):
-        with pytest.raises(HTTPException) as exc_info:
-            await redis_queue.enqueue_job("job-123")
-
-    assert exc_info.value.status_code == 503
-    assert exc_info.value.detail["code"] == ErrorCode.QUEUE_UNAVAILABLE
-
+# ================ Removed because of switch from Redis to SQS ================
+# async def test_job_enqueue_failure_raises_queue_unavailable():
+#     mock_client = AsyncMock()
+#     mock_client.lpush.side_effect = jobConnectionError("connection refused")
+#
+#     with patch("app.services.job_queue.get_redis_client", return_value=mock_client):
+#         with pytest.raises(HTTPException) as exc_info:
+#             await job_queue.enqueue_job("job-123")
+#
+#     assert exc_info.value.status_code == 503
+#     assert exc_info.value.detail["code"] == ErrorCode.QUEUE_UNAVAILABLE
+#
 
 def test_sanitize_filename_rejects_empty():
     with pytest.raises(HTTPException) as exc_info:

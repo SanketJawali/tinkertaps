@@ -8,7 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Tinkertaps API"
     app_version: str = "0.1.0"
-    environment: Literal["development", "staging", "production"] = "development"
+    environment: Literal["development",
+                         "staging", "production"] = "development"
     debug: bool = False
     log_level: str = "INFO"
 
@@ -23,7 +24,8 @@ class Settings(BaseSettings):
     migration_db_user: str
     migration_db_password: str
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:4321"])
+    cors_origins: list[str] = Field(default_factory=lambda: [
+                                    "http://localhost:4321"])
     cors_allow_credentials: bool = True
 
     # Clerk (JWT verification via JWKS)
@@ -31,17 +33,21 @@ class Settings(BaseSettings):
     clerk_jwks_url: str = ""
     clerk_audience: str | None = None
 
-    # S3 / object storage
+    # AWS / Floci
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
+
+    # S3 / object storage
     s3_bucket_name: str = ""
     s3_endpoint_url: str | None = None
     s3_presign_expiry_seconds: int = 3600
 
+    # SQS Queue
+    sqs_queue_url: str = ""
+
     # Redis job queue
     redis_url: str = "redis://localhost:6379/0"
-    redis_job_queue_key: str = "jobs:queue"
 
     # Credits + anonymous tracking
     anonymous_default_credits: int = 3
@@ -88,6 +94,7 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
 
+# Cache the Settings instance to avoid reloading from environment variables
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

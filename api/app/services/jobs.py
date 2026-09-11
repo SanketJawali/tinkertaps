@@ -13,7 +13,7 @@ from app.core.errors import ErrorCode, raise_api_error
 from app.core.logging import get_logger
 from app.models.jobs import Job, JobStatus, Operation
 from app.models.users import User
-from app.services import redis_queue, s3
+from app.services import s3, job_queue
 
 logger = get_logger(__name__)
 
@@ -67,7 +67,8 @@ async def create_draft_job_with_presign(
     await ensure_credits_for_new_draft(db, user)
 
     job_id = uuid.uuid4()
-    input_key = build_input_key(user_id=user.id, job_id=job_id, filename=filename)
+    input_key = build_input_key(
+        user_id=user.id, job_id=job_id, filename=filename)
 
     job = Job(
         id=job_id,
@@ -116,7 +117,8 @@ async def start_draft_job(
     if job.status != JobStatus.DRAFT:
         raise_api_error(
             code=ErrorCode.JOB_NOT_DRAFT,
-            message=f"Job is not in draft status (current: {job.status.value})",
+            message=f"Job is not in draft status (current: {
+                job.status.value})",
             status_code=status.HTTP_409_CONFLICT,
             logger=logger,
             job_id=str(job_id),
@@ -139,7 +141,7 @@ async def start_draft_job(
     await db.refresh(user)
 
     try:
-        await redis_queue.enqueue_job(str(job.id))
+        await job_queue.enqueue_job(str(job.id))
     except HTTPException:
         user.credits += 1
         job.status = JobStatus.DRAFT

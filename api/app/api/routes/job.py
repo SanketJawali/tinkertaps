@@ -1,6 +1,10 @@
+from app.services.job_queue import enqueue_job
+from app.core.logging import get_logger
+from app.core.errors import ErrorCode, raise_api_error
+from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, Depends, Response, status
 import uuid
 
-from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, apply_anon_cookie, get_auth_context
@@ -9,6 +13,8 @@ from app.schemas.jobs import PresignRequest, PresignResponse, StartJobResponse
 from app.services import jobs as job_service
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+logger = get_logger(__name__)
 
 
 @router.post(
@@ -57,14 +63,70 @@ async def start_job(
 ) -> StartJobResponse:
     """
     Verify the S3 upload for a draft job, deduct one credit, mark the job
-    pending, and push it onto the Redis processing queue.
+    pending, and enqueue it for background processing.
     """
-    job = await job_service.start_draft_job(
-        db=db,
-        user=auth.user,
-        job_id=job_id,
+    logger.debug(
+        "Starting job",
+        extra={
+            "job_id": str(job_id),
+            "user_id": str(auth.user.id),
+        },
     )
+
+    try:
+        job = await job_service.start_draft_job(
+            db=db,
+            user=auth.user,
+            job_id=job_id,
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "Failed to prepare job for processing",
+            extra={
+                "job_id": str(job_id),
+                "user_id": str(auth.user.id),
+            },
+        )
+        raise
+
+    try:
+        logger.debug(
+            "Enqueuing job for background processing",
+            extra={"job_id": str(job_id)},
+        )
+
+        message_id = await run_in_threadpool(
+            enqueue_job,
+            str(job.id),
+        )
+
+        logger.info(
+            "Job successfully queued",
+            extra={
+                "job_id": str(job.id),
+                "message_id": message_id,
+            },
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "Failed to enqueue job",
+            extra={"job_id": str(job.id)},
+        )
+
+        raise_api_error(
+            code=ErrorCode.QUEUE_UNAVAILABLE,
+            message="Job could not be queued for processing",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            logger=logger,
+            log_message="SQS enqueue failed",
+            exc=exc,
+            job_id=str(job.id),
+        )
+
     apply_anon_cookie(response, auth)
+
     return StartJobResponse(
         id=job.id,
         status=job.status,

@@ -15,6 +15,9 @@ services:
 
     # Do NOT expose PostgreSQL to the host in production.
     # API reaches it using: postgres:5432
+    # ================== For Development Only ==================
+    expose:
+      - "5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql
@@ -102,7 +105,7 @@ services:
     networks:
       - edge
 
-    stop_grace_period: 3s
+    stop_grace_period: 2s
 
   # ============================================================
   # Nginx Reverse Proxy
@@ -126,11 +129,30 @@ services:
     networks:
       - edge
 
+  # ============================================================
+  # Floci - Local AWS Emulator
+  # ============================================================
+  floci:
+    image: floci/floci:latest
+    restart: unless-stopped
+
+    ports:
+      - "4566:4566"
+
+    volumes:
+      - floci_data:/app/data
+
+    networks:
+      - backend
+      - floci-external
+
+
 # ==============================================================
 # Volumes
 # ==============================================================
 volumes:
   postgres_data:
+  floci_data:
 
 
 # ==============================================================
@@ -146,3 +168,7 @@ networks:
   backend:
     driver: bridge
     internal: true
+
+  # Floci External
+  floci-external:
+    driver: bridge
