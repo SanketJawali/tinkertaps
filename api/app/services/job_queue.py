@@ -28,13 +28,12 @@ def _ensure_sqs_configured() -> None:
 def get_sqs_client() -> BaseClient:
     """Return a cached SQS client."""
     _ensure_sqs_configured()
-
     return boto3.client(
         "sqs",
-        aws_access_key_id=settings.aws_key_id,
-        aws_secret_access_key=settings.aws_secret_key,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
         region_name=settings.aws_region,
-        endpoint_url=settings.sqs_endpoint_url,
+        endpoint_url=settings.aws_internal_endpoint_url
     )
 
 

@@ -136,6 +136,12 @@ services:
     image: floci/floci:latest
     restart: unless-stopped
 
+    environment:
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_PERSISTENT_PATH: /app/data
+      FLOCI_HOSTNAME: floci
+      FLOCI_BASE_URL: http://floci:4566
+
     ports:
       - "4566:4566"
 

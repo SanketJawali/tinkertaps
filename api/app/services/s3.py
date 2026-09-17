@@ -30,6 +30,7 @@ def _ensure_s3_configured() -> None:
 
 @lru_cache
 def get_s3_client() -> BaseClient:
+    """S3 client used for server-side operations"""
     _ensure_s3_configured()
 
     # Force the regional endpoint. boto3 often signs URLs against
@@ -40,19 +41,42 @@ def get_s3_client() -> BaseClient:
         "region_name": settings.aws_region,
         "config": Config(
             signature_version="s3v4",
-            s3={"addressing_style": "virtual"},
+            s3={"addressing_style": "path"},
         ),
     }
     if settings.aws_access_key_id and settings.aws_secret_access_key:
         client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
         client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
-    if settings.s3_endpoint_url:
-        logger.debug("Using custom S3 endpoint URL: %s", settings.s3_endpoint_url)
-        client_kwargs["endpoint_url"] = settings.s3_endpoint_url
+    if settings.aws_internal_endpoint_url:
+        logger.debug("Using custom S3 endpoint URL: %s",
+                     settings.aws_internal_endpoint_url)
+        client_kwargs["endpoint_url"] = settings.aws_internal_endpoint_url
     elif settings.aws_region:
         client_kwargs["endpoint_url"] = (
             f"https://s3.{settings.aws_region}.amazonaws.com"
         )
+
+    return boto3.client(**client_kwargs)
+
+
+@lru_cache
+def get_s3_presign_client() -> BaseClient:
+    """S3 client used to generate URLs consumed by the browser."""
+    _ensure_s3_configured()
+
+    client_kwargs: dict[str, Any] = {
+        "service_name": "s3",
+        "region_name": settings.aws_region,
+        "endpoint_url": settings.aws_public_endpoint_url,
+        "config": Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
+    }
+
+    if settings.aws_access_key_id and settings.aws_secret_access_key:
+        client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+        client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
 
     return boto3.client(**client_kwargs)
 
@@ -63,7 +87,7 @@ def create_presigned_upload_url(
     content_type: str,
     expires_in: int | None = None,
 ) -> str:
-    client = get_s3_client()
+    client = get_s3_presign_client()
     expiry = expires_in or settings.s3_presign_expiry_seconds
     try:
         return client.generate_presigned_url(

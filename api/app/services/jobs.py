@@ -5,6 +5,7 @@ import uuid
 from pathlib import PurePosixPath
 
 from fastapi import HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,7 +142,18 @@ async def start_draft_job(
     await db.refresh(user)
 
     try:
-        await job_queue.enqueue_job(str(job.id))
+        await run_in_threadpool(
+            job_queue.enqueue_job,
+            str(job.id)
+        )
+        # sqs = job_queue.get_sqs_client()
+        # response = sqs.receive_message(
+        #     QueueUrl=settings.sqs_queue_url,
+        #     MaxNumberOfMessages=1,
+        #     WaitTimeSeconds=1,
+        # )
+        #
+        # print(response)
     except HTTPException:
         user.credits += 1
         job.status = JobStatus.DRAFT

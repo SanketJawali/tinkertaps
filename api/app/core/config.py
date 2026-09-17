@@ -37,14 +37,16 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
+    aws_internal_endpoint_url: str
+    aws_public_endpoint_url: str
 
     # S3 / object storage
     s3_bucket_name: str = ""
-    s3_endpoint_url: str | None = None
     s3_presign_expiry_seconds: int = 3600
 
     # SQS Queue
-    sqs_queue_url: str = ""
+    sqs_queue_url: str
+    sqs_queue_name: str
 
     # Redis job queue
     redis_url: str = "redis://localhost:6379/0"
