@@ -35,21 +35,21 @@ services:
   # ============================================================
   # Redis
   # ============================================================
-  redis:
-    image: redis:8.8
-    restart: unless-stopped
-
-    # Do NOT expose Redis to the host in production.
-    # API reaches it using: redis:6379
-
-    networks:
-      - backend
-
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # redis:
+  #   image: redis:8.8
+  #   restart: unless-stopped
+  #
+  #   # Do NOT expose Redis to the host in production.
+  #   # API reaches it using: redis:6379
+  #
+  #   networks:
+  #     - backend
+  #
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
 
   # ============================================================
@@ -78,8 +78,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      # redis:
+      #   condition: service_healthy
 
     networks:
       - edge
