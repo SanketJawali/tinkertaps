@@ -1,0 +1,10 @@
+__pycache__
+__init__.py
+*_test
+lambda-test.json
+env.json
+.env.lambda
+*.zip
+*.png
+*.jpg
+*.jpeg
