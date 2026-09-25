@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, apply_anon_cookie, get_auth_context
 from app.db.session import get_db
-from app.schemas.jobs import PresignRequest, PresignResponse, StartJobResponse
+from app.schemas.jobs import (
+    JobStatusPollResponse,
+    PresignRequest,
+    PresignResponse,
+    StartJobResponse,
+)
 from app.services import jobs as job_service
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -47,6 +52,39 @@ async def create_presigned_upload(
         upload_url=upload_url,
         input_key=job.input_key,
         expires_in=expires_in,
+    )
+
+
+@router.get(
+    "/{job_id}/job-status-poll",
+    response_model=JobStatusPollResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def job_status_poll(
+    job_id: uuid.UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> JobStatusPollResponse:
+    """
+    Return the current job status for polling clients.
+
+    When the job is completed, also return a short-lived S3 download URL.
+    When failed, include the stored error_message.
+    """
+    job, download_url, download_expires_in = await job_service.build_job_status_poll(
+        db=db,
+        user=auth.user,
+        job_id=job_id,
+    )
+    apply_anon_cookie(response, auth)
+    return JobStatusPollResponse(
+        id=job.id,
+        status=job.status,
+        operation=job.operation,
+        error_message=job.error_message,
+        download_url=download_url,
+        download_expires_in=download_expires_in,
     )
 
 

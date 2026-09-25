@@ -42,6 +42,15 @@ class StartJobResponse(BaseModel):
     credits_remaining: int
 
 
+class JobStatusPollResponse(BaseModel):
+    id: uuid.UUID
+    status: JobStatus
+    operation: Operation
+    error_message: str | None = None
+    download_url: str | None = None
+    download_expires_in: int | None = None
+
+
 class JobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

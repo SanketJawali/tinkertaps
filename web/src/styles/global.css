@@ -76,6 +76,28 @@ body {
     outline-offset: 3px;
 }
 
+/* Category accents — grayscale base stays; primary/accent shift per tool category */
+[data-category="image"] {
+    --color-primary: #4b5a50;
+    --color-primary-content: #ffffff;
+    --color-accent: #66736a;
+    --color-accent-content: #ffffff;
+}
+
+[data-category="pdf"] {
+    --color-primary: #8b5f5a;
+    --color-primary-content: #ffffff;
+    --color-accent: #a67c77;
+    --color-accent-content: #ffffff;
+}
+
+[data-category="text"] {
+    --color-primary: #4a5f73;
+    --color-primary-content: #ffffff;
+    --color-accent: #667d91;
+    --color-accent-content: #ffffff;
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;

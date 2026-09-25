@@ -111,6 +111,42 @@ def create_presigned_upload_url(
         )
 
 
+def create_presigned_download_url(
+    *,
+    key: str,
+    filename: str | None = None,
+    expires_in: int | None = None,
+) -> str:
+    client = get_s3_presign_client()
+    expiry = expires_in or settings.s3_download_presign_expiry_seconds
+    params: dict[str, str] = {
+        "Bucket": settings.s3_bucket_name,
+        "Key": key,
+    }
+    if filename:
+        safe_name = filename.replace('"', "")
+        params["ResponseContentDisposition"] = (
+            f'attachment; filename="{safe_name}"'
+        )
+
+    try:
+        return client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params=params,
+            ExpiresIn=expiry,
+        )
+    except (ClientError, BotoCoreError) as exc:
+        raise_api_error(
+            code=ErrorCode.STORAGE_UNAVAILABLE,
+            message="Failed to generate download URL",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            logger=logger,
+            log_message="S3 download presign failed",
+            exc=exc,
+            key=key,
+        )
+
+
 def object_exists(key: str) -> bool:
     client = get_s3_client()
     try:
@@ -151,6 +187,20 @@ async def create_presigned_upload_url_async(
         create_presigned_upload_url,
         key=key,
         content_type=content_type,
+        expires_in=expires_in,
+    )
+
+
+async def create_presigned_download_url_async(
+    *,
+    key: str,
+    filename: str | None = None,
+    expires_in: int | None = None,
+) -> str:
+    return await asyncio.to_thread(
+        create_presigned_download_url,
+        key=key,
+        filename=filename,
         expires_in=expires_in,
     )
 

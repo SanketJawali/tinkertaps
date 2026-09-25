@@ -1,63 +1,343 @@
 ---
+import { UserButton } from '@clerk/astro/components';
+
+import {
+	CATEGORIES,
+	getCategoryOps,
+	toolPath,
+	type OperationCategory,
+} from '../lib/operations';
+
 interface Props {
 	currentPath?: string;
 }
 
 const { currentPath = Astro.url.pathname } = Astro.props;
+
+const { isAuthenticated } = Astro.locals.auth();
+
+const isAuthPage =
+	currentPath === '/login' || currentPath === '/register';
+
+const activeCategory: OperationCategory | null = currentPath.startsWith(
+	'/tools/image',
+)
+	? 'image'
+	: currentPath.startsWith('/tools/pdf')
+		? 'pdf'
+		: currentPath.startsWith('/tools/text')
+			? 'text'
+			: null;
 ---
 
-<header class="border-b border-base-300">
+<header class="border-b border-base-300 bg-base-100">
 	<nav
-		class="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 lg:px-8"
+		class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 lg:px-8"
 		aria-label="Primary navigation"
 	>
-		<a
-			href="/"
-			class="flex items-center gap-2.5 font-semibold tracking-tight"
-		>
-			<span
-				class="grid size-8 place-items-center rounded-lg bg-neutral text-sm font-bold text-neutral-content"
+		<div class="flex min-w-0 items-center gap-6 lg:gap-8">
+			<a
+				href="/"
+				class="flex shrink-0 items-center gap-2.5 font-semibold tracking-tight"
 			>
-				T
-			</span>
+				<span
+					class="grid size-8 place-items-center rounded-lg bg-neutral text-sm font-bold text-neutral-content"
+				>
+					T
+				</span>
 
-			<span>Tinkertaps</span>
-		</a>
+				<span>Tinkertaps</span>
+			</a>
 
-        <div class="flex items-center gap-2">
-            {
-                currentPath === '/login' ? (
-                    <>
-                        <span class="hidden text-sm text-base-content/50 sm:inline">
-                            New here?
-                        </span>
+			{!isAuthPage && (
+				<div class="hidden items-center gap-1 md:flex">
+					{CATEGORIES.map((category) => {
+						const ops = getCategoryOps(category.id);
+						const isActive = activeCategory === category.id;
 
-                        <a href="/register" class="btn btn-primary btn-sm">
-                            Create account
-                        </a>
-                    </>
-                ) : currentPath === '/register' ? (
-                    <>
-                        <span class="hidden text-sm text-base-content/50 sm:inline">
-                            Already have an account?
-                        </span>
+						return (
+							<details class="nav-dropdown group relative">
+								<summary
+									class:list={[
+										'btn btn-ghost btn-sm list-none',
+										isActive
+											? 'bg-base-200 text-base-content'
+											: 'text-base-content/60',
+									]}
+								>
+									{category.label}
+									<svg
+										class="ml-1 size-3.5 opacity-50 transition-transform group-open:rotate-180"
+										viewBox="0 0 16 16"
+										fill="none"
+										aria-hidden="true"
+									>
+										<path
+											d="M4 6l4 4 4-4"
+											stroke="currentColor"
+											stroke-width="1.5"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</summary>
 
-                        <a href="/login" class="btn btn-ghost btn-sm">
-                            Log in
-                        </a>
-                    </>
-                ) : (
-                    <>
-                        <a href="/login" class="btn btn-ghost btn-sm">
-                            Log in
-                        </a>
+								<div
+									class="absolute left-0 top-full z-50 mt-1 min-w-52 rounded-box border border-base-300 bg-base-100 py-1 shadow-sm"
+								>
+									{ops.map((op) =>
+										op.status === 'live' ? (
+											<a
+												href={toolPath(op)}
+												class:list={[
+													'block px-4 py-2.5 text-sm transition-colors hover:bg-base-200',
+													currentPath === toolPath(op)
+														? 'font-medium text-primary'
+														: 'text-base-content/80',
+												]}
+											>
+												{op.title}
+											</a>
+										) : (
+											<span class="flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-base-content/35">
+												{op.title}
+												<span class="font-mono text-[10px] uppercase tracking-[0.12em]">
+													Soon
+												</span>
+											</span>
+										),
+									)}
+								</div>
+							</details>
+						);
+					})}
+				</div>
+			)}
+		</div>
 
-                        <a href="/register" class="btn btn-primary btn-sm">
-                            Get started
-                        </a>
-                    </>
-                )
-            }
-        </div>
+		<div class="flex items-center gap-2">
+			{isAuthPage ? (
+				currentPath === '/login' ? (
+					<>
+						<span class="hidden text-sm text-base-content/50 sm:inline">
+							New here?
+						</span>
+						<a href="/register" class="btn btn-primary btn-sm">
+							Create account
+						</a>
+					</>
+				) : (
+					<>
+						<span class="hidden text-sm text-base-content/50 sm:inline">
+							Already have an account?
+						</span>
+						<a href="/login" class="btn btn-ghost btn-sm">
+							Log in
+						</a>
+					</>
+				)
+			) : (
+				<>
+					{isAuthenticated ? (
+						<div class="hidden items-center gap-3 sm:flex">
+							<a
+								href="/app"
+								class:list={[
+									'btn btn-ghost btn-sm',
+									currentPath === '/app' ||
+									currentPath.startsWith('/app/')
+										? 'bg-base-200'
+										: 'text-base-content/55',
+								]}
+							>
+								Desk
+							</a>
+							<UserButton />
+						</div>
+					) : (
+						<div class="hidden items-center gap-2 sm:flex">
+							<a href="/login" class="btn btn-ghost btn-sm">
+								Log in
+							</a>
+							<a href="/register" class="btn btn-primary btn-sm">
+								Register
+							</a>
+						</div>
+					)}
+
+					<details class="nav-mobile relative md:hidden">
+						<summary
+							class="btn btn-ghost btn-sm list-none px-2"
+							aria-label="Open menu"
+						>
+							<svg
+								class="size-5"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								aria-hidden="true"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M3 5h14a1 1 0 010 2H3a1 1 0 110-2zm0 4h14a1 1 0 010 2H3a1 1 0 110-2zm0 4h14a1 1 0 010 2H3a1 1 0 110-2z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</summary>
+
+						<div
+							class="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2.5rem,20rem)] rounded-box border border-base-300 bg-base-100 shadow-sm"
+						>
+							<div class="max-h-[70vh] overflow-y-auto py-2">
+								{CATEGORIES.map((category) => {
+									const ops = getCategoryOps(category.id);
+
+									return (
+										<details
+											class="nav-accordion border-b border-base-300 last:border-b-0"
+											open={activeCategory === category.id}
+										>
+											<summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium">
+												{category.label}
+												<svg
+													class="size-3.5 opacity-50"
+													viewBox="0 0 16 16"
+													fill="none"
+													aria-hidden="true"
+												>
+													<path
+														d="M4 6l4 4 4-4"
+														stroke="currentColor"
+														stroke-width="1.5"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+													/>
+												</svg>
+											</summary>
+
+											<div class="pb-2">
+												{ops.map((op) =>
+													op.status === 'live' ? (
+														<a
+															href={toolPath(op)}
+															class:list={[
+																'block px-4 py-2 pl-6 text-sm',
+																currentPath ===
+																toolPath(op)
+																	? 'font-medium text-primary'
+																	: 'text-base-content/70',
+															]}
+														>
+															{op.title}
+														</a>
+													) : (
+														<span class="flex items-center justify-between gap-2 px-4 py-2 pl-6 text-sm text-base-content/35">
+															{op.title}
+															<span class="font-mono text-[10px] uppercase tracking-[0.12em]">
+																Soon
+															</span>
+														</span>
+													),
+												)}
+											</div>
+										</details>
+									);
+								})}
+							</div>
+
+							<div class="border-t border-base-300 px-4 py-3">
+								{isAuthenticated ? (
+									<div class="flex items-center justify-between gap-3">
+										<a
+											href="/app"
+											class="btn btn-ghost btn-sm"
+										>
+											Desk
+										</a>
+										<UserButton />
+									</div>
+								) : (
+									<div class="flex items-center gap-2">
+										<a
+											href="/login"
+											class="btn btn-ghost btn-sm flex-1"
+										>
+											Log in
+										</a>
+										<a
+											href="/register"
+											class="btn btn-primary btn-sm flex-1"
+										>
+											Register
+										</a>
+									</div>
+								)}
+							</div>
+						</div>
+					</details>
+				</>
+			)}
+		</div>
 	</nav>
 </header>
+
+<style>
+	.nav-dropdown > summary::-webkit-details-marker,
+	.nav-mobile > summary::-webkit-details-marker,
+	.nav-accordion > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.nav-dropdown > summary,
+	.nav-mobile > summary,
+	.nav-accordion > summary {
+		list-style: none;
+	}
+</style>
+
+<script>
+	function closeOtherDetails(
+		root: ParentNode,
+		selector: string,
+		opened: HTMLDetailsElement,
+	) {
+		root.querySelectorAll<HTMLDetailsElement>(selector).forEach((el) => {
+			if (el !== opened) {
+				el.open = false;
+			}
+		});
+	}
+
+	document.addEventListener('toggle', (event) => {
+		const target = event.target;
+
+		if (!(target instanceof HTMLDetailsElement) || !target.open) {
+			return;
+		}
+
+		if (target.classList.contains('nav-dropdown')) {
+			closeOtherDetails(document, 'details.nav-dropdown', target);
+		}
+
+		if (target.classList.contains('nav-mobile')) {
+			closeOtherDetails(document, 'details.nav-mobile', target);
+		}
+	}, true);
+
+	document.addEventListener('click', (event) => {
+		const target = event.target;
+
+		if (!(target instanceof Node)) {
+			return;
+		}
+
+		document
+			.querySelectorAll<HTMLDetailsElement>(
+				'details.nav-dropdown[open], details.nav-mobile[open]',
+			)
+			.forEach((el) => {
+				if (!el.contains(target)) {
+					el.open = false;
+				}
+			});
+	});
+</script>

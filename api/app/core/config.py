@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # S3 / object storage
     s3_bucket_name: str = ""
     s3_presign_expiry_seconds: int = 3600
+    s3_download_presign_expiry_seconds: int = 3600
 
     # SQS Queue
     sqs_queue_url: str

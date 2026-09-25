@@ -4,16 +4,22 @@ import '../styles/global.css';
 interface Props {
 	title?: string;
 	description?: string;
+	category?: 'image' | 'pdf' | 'text';
 }
 
 const {
 	title = 'Tinkertaps',
 	description = 'Simple tools for everyday files.',
+	category,
 } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="en" data-theme="tinkertaps">
+<html
+	lang="en"
+	data-theme="tinkertaps"
+	data-category={category}
+>
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width" />

@@ -161,3 +161,62 @@ async def start_draft_job(
         raise
 
     return job
+
+
+async def get_job_status_for_user(
+    *,
+    db: AsyncSession,
+    user: User,
+    job_id: uuid.UUID,
+) -> Job:
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise_api_error(
+            code=ErrorCode.JOB_NOT_FOUND,
+            message="Job not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if job.user_id != user.id:
+        raise_api_error(
+            code=ErrorCode.JOB_FORBIDDEN,
+            message="Not allowed to view this job",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    return job
+
+
+def output_filename_from_key(output_key: str) -> str:
+    name = PurePosixPath(output_key).name
+    return name or "download"
+
+
+async def build_job_status_poll(
+    *,
+    db: AsyncSession,
+    user: User,
+    job_id: uuid.UUID,
+) -> tuple[Job, str | None, int | None]:
+    job = await get_job_status_for_user(db=db, user=user, job_id=job_id)
+
+    download_url: str | None = None
+    download_expires_in: int | None = None
+
+    if job.status == JobStatus.COMPLETED:
+        if not job.output_key:
+            raise_api_error(
+                code=ErrorCode.STORAGE_UNAVAILABLE,
+                message="Output file is not available yet",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                logger=logger,
+                job_id=str(job_id),
+            )
+
+        download_expires_in = settings.s3_download_presign_expiry_seconds
+        download_url = await s3.create_presigned_download_url_async(
+            key=job.output_key,
+            filename=output_filename_from_key(job.output_key),
+            expires_in=download_expires_in,
+        )
+
+    return job, download_url, download_expires_in

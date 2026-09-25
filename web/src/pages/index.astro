@@ -2,11 +2,20 @@
 import Footer from '../components/Footer.astro';
 import Navbar from '../components/Navbar.astro';
 import Layout from '../layouts/Layout.astro';
+import {
+	CATEGORIES,
+	getCategoryOps,
+	toolPath,
+} from '../lib/operations';
+
+const liveOps = CATEGORIES.flatMap((category) =>
+	getCategoryOps(category.id).filter((op) => op.status === 'live'),
+);
 ---
 
 <Layout
-	title="Tinkertaps — Simple tools for everyday files"
-	description="Compress images, change file formats, and work with everyday files."
+	title="Tinkertaps — File conversion tools"
+	description="Convert images, PDFs, and text files. Start with JPEG to PNG."
 >
 	<div class="min-h-screen bg-base-100 text-base-content">
 		<Navbar />
@@ -19,53 +28,49 @@ import Layout from '../layouts/Layout.astro';
 					<p
 						class="mb-5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary"
 					>
-						Your file, your way
+						File tools
 					</p>
 
 					<h1
 						class="max-w-xl text-5xl font-semibold leading-[0.98] tracking-[-0.045em] sm:text-6xl lg:text-7xl"
 					>
-						Drop it in.
+						Pick a tool.
 
 						<span class="text-base-content/45">
-							Choose what you need.
+							Upload a file.
 						</span>
 
-						Take the result.
+						Get the result.
 					</h1>
 
 					<p
 						class="mt-7 max-w-lg text-lg leading-8 text-base-content/65"
 					>
-						Compress an image, change a file's format, or pull
-						text from a PDF. Choose a file and we'll take it
-						from there.
+						Image, PDF, and text conversions. Open the tool you
+						need, then upload your file.
 					</p>
 
 					<div class="mt-9 flex flex-wrap items-center gap-3">
 						<a
-							href="/new"
+							href="/tools/image/jpeg-to-png"
 							class="btn btn-primary"
 						>
-							Choose a file
+							JPEG to PNG
 						</a>
 
 						<a
-							href="#how-it-works"
+							href="#tools"
 							class="btn btn-ghost"
 						>
-							How it works
+							Browse tools
 						</a>
 					</div>
-
-					<p class="mt-5 text-sm text-base-content/45">
-						You can close the page. Come back when it's ready.
-					</p>
 				</div>
 
 				<div
 					class="file-panel relative mx-auto w-full max-w-lg"
-					aria-label="Example file status"
+					aria-label="Example conversion"
+					data-category="image"
 				>
 					<div
 						class="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm"
@@ -75,11 +80,11 @@ import Layout from '../layouts/Layout.astro';
 								<p
 									class="font-mono text-[11px] uppercase tracking-[0.16em] text-base-content/45"
 								>
-									Your file
+									Image
 								</p>
 
 								<p class="mt-1 font-medium">
-									camera-export.png
+									photo.jpg → photo.png
 								</p>
 							</div>
 
@@ -104,7 +109,7 @@ import Layout from '../layouts/Layout.astro';
 									</p>
 
 									<p class="text-sm text-base-content/45">
-										14.8 MB
+										JPEG · 2.4 MB
 									</p>
 								</div>
 							</div>
@@ -114,11 +119,11 @@ import Layout from '../layouts/Layout.astro';
 
 								<div>
 									<p class="font-medium">
-										Made smaller
+										JPEG to PNG
 									</p>
 
 									<p class="text-sm text-base-content/45">
-										Reduced by 71%
+										Converting
 									</p>
 								</div>
 							</div>
@@ -132,7 +137,7 @@ import Layout from '../layouts/Layout.astro';
 									</p>
 
 									<p class="text-sm text-base-content/45">
-										4.2 MB
+										PNG · 3.1 MB
 									</p>
 								</div>
 							</div>
@@ -142,7 +147,7 @@ import Layout from '../layouts/Layout.astro';
 							class="mt-5 flex items-center justify-between border-t border-base-300 pt-4"
 						>
 							<p class="text-sm text-base-content/45">
-								Your file is ready
+								Result ready
 							</p>
 
 							<button
@@ -157,106 +162,157 @@ import Layout from '../layouts/Layout.astro';
 			</section>
 
 			<section
-				id="how-it-works"
+				id="tools"
 				class="border-y border-base-300 bg-base-200/50"
 			>
-				<div
-					class="mx-auto max-w-6xl px-5 py-16 lg:px-8"
-				>
+				<div class="mx-auto max-w-6xl px-5 py-16 lg:px-8">
 					<div class="mb-10 max-w-xl">
 						<p
 							class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary"
 						>
-							How it works
+							Tools
 						</p>
 
 						<h2
 							class="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl"
 						>
-							Three steps. That's it.
+							By file type
 						</h2>
 					</div>
 
-					<div
-						class="grid gap-px overflow-hidden rounded-2xl border border-base-300 bg-base-300 md:grid-cols-3"
-					>
-						<article class="bg-base-100 p-7">
-							<p class="font-mono text-xs text-primary">
-								01 / CHOOSE
-							</p>
+					<div class="grid gap-8 lg:grid-cols-3">
+						{
+							CATEGORIES.map((category) => {
+								const ops = getCategoryOps(category.id);
 
-							<h3 class="mt-5 text-xl font-semibold">
-								Pick a file
-							</h3>
+								return (
+									<div
+										class="rounded-box border border-base-300 bg-base-100 p-6"
+										data-category={category.id}
+									>
+										<h3 class="text-xl font-semibold tracking-[-0.03em]">
+											{category.label}
+										</h3>
 
-							<p
-								class="mt-3 leading-7 text-base-content/60"
-							>
-								Choose the file you want to change.
-							</p>
-						</article>
-
-						<article class="bg-base-100 p-7">
-							<p class="font-mono text-xs text-primary">
-								02 / CHANGE
-							</p>
-
-							<h3 class="mt-5 text-xl font-semibold">
-								Choose what you need
-							</h3>
-
-							<p
-								class="mt-3 leading-7 text-base-content/60"
-							>
-								Make it smaller, change its format, or
-								pull out the text.
-							</p>
-						</article>
-
-						<article class="bg-base-100 p-7">
-							<p class="font-mono text-xs text-primary">
-								03 / DONE
-							</p>
-
-							<h3 class="mt-5 text-xl font-semibold">
-								Get your file
-							</h3>
-
-							<p
-								class="mt-3 leading-7 text-base-content/60"
-							>
-								Come back when it's ready and download
-								the result.
-							</p>
-						</article>
+										<ul class="mt-5 space-y-1">
+											{ops.map((op) =>
+												op.status === 'live' ? (
+													<li>
+														<a
+															href={toolPath(op)}
+															class="flex items-center justify-between rounded-field px-2 py-2.5 text-sm transition-colors hover:bg-base-200"
+														>
+															<span>{op.title}</span>
+															<span class="text-base-content/40">
+																→
+															</span>
+														</a>
+													</li>
+												) : (
+													<li class="flex items-center justify-between px-2 py-2.5 text-sm text-base-content/35">
+														<span>{op.title}</span>
+														<span class="font-mono text-[10px] uppercase tracking-[0.12em]">
+															Soon
+														</span>
+													</li>
+												),
+											)}
+										</ul>
+									</div>
+								);
+							})
+						}
 					</div>
 				</div>
 			</section>
 
 			<section
+				id="how-it-works"
 				class="mx-auto max-w-6xl px-5 py-16 lg:px-8"
 			>
+				<div class="mb-10 max-w-xl">
+					<p
+						class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary"
+					>
+						How it works
+					</p>
+
+					<h2
+						class="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl"
+					>
+						Three steps
+					</h2>
+				</div>
+
+				<div
+					class="grid gap-px overflow-hidden rounded-2xl border border-base-300 bg-base-300 md:grid-cols-3"
+				>
+					<article class="bg-base-100 p-7">
+						<p class="font-mono text-xs text-primary">
+							01 / TOOL
+						</p>
+
+						<h3 class="mt-5 text-xl font-semibold">
+							Open a tool
+						</h3>
+
+						<p class="mt-3 leading-7 text-base-content/60">
+							Choose a conversion such as JPEG to PNG from the
+							nav or tool list.
+						</p>
+					</article>
+
+					<article class="bg-base-100 p-7">
+						<p class="font-mono text-xs text-primary">
+							02 / UPLOAD
+						</p>
+
+						<h3 class="mt-5 text-xl font-semibold">
+							Upload your file
+						</h3>
+
+						<p class="mt-3 leading-7 text-base-content/60">
+							Select a file that matches the tool. Only accepted
+							types are allowed.
+						</p>
+					</article>
+
+					<article class="bg-base-100 p-7">
+						<p class="font-mono text-xs text-primary">
+							03 / RESULT
+						</p>
+
+						<h3 class="mt-5 text-xl font-semibold">
+							Download the result
+						</h3>
+
+						<p class="mt-3 leading-7 text-base-content/60">
+							When the conversion finishes, download the output
+							file.
+						</p>
+					</article>
+				</div>
+			</section>
+
+			<section class="mx-auto max-w-6xl px-5 pb-16 lg:px-8">
 				<div
 					class="flex flex-col gap-8 rounded-2xl border border-base-300 bg-base-200/60 p-8 sm:flex-row sm:items-center sm:justify-between lg:p-10"
 				>
 					<div>
-						<h2
-							class="text-3xl font-semibold tracking-[-0.035em]"
-						>
-							Have a file waiting?
+						<h2 class="text-3xl font-semibold tracking-[-0.035em]">
+							{liveOps[0]?.title ?? 'JPEG to PNG'}
 						</h2>
 
 						<p class="mt-2 text-base-content/60">
-							Choose it, tell us what you need, and we'll
-							take it from there.
+							Available now. More tools are on the way.
 						</p>
 					</div>
 
 					<a
-						href="/register"
+						href="/tools/image/jpeg-to-png"
 						class="btn btn-primary shrink-0"
 					>
-						Choose a file
+						Open tool
 					</a>
 				</div>
 			</section>

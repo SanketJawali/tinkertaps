@@ -37,32 +37,31 @@ logger.setLevel(logging.INFO)
 # Database
 # ---------------------------------------------------------------------------
 
-# Lambda executions are independent workers. Keep the pool deliberately
-# small so concurrency does not multiply into a large number of DB
-# connections.
-#
-# Example:
-#
-#   20 concurrent Lambda executions
-#   x 1 DB connection per worker
-#   = roughly 20 DB connections
-#
-# This is much safer than giving every Lambda execution a large pool.
-engine = create_async_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=1,
-    max_overflow=0,
-    echo=settings.debug,
-)
+def create_db():
+    """
+    Create a database engine and session factory for one Lambda invocation.
 
-SessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
+    The async engine/pool must not outlive the asyncio event loop that uses it.
+    lambda_handler() creates a fresh event loop with asyncio.run(), so the
+    engine is also created and disposed inside that loop.
+    """
+    engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+        echo=settings.debug,
+    )
+
+    session_local = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+        autocommit=False,
+    )
+
+    return engine, session_local
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +360,7 @@ async def mark_job_failed(
 
 async def process_job(
     job_id: UUID,
+    session_local: async_sessionmaker[AsyncSession],
 ) -> None:
     """
     Process one Tinkertaps job.
@@ -385,7 +385,7 @@ async def process_job(
         job_id,
     )
 
-    async with SessionLocal() as db:
+    async with session_local() as db:
 
         # ---------------------------------------------------------------
         # 1. Atomically claim the job
@@ -469,12 +469,7 @@ async def process_job(
                 input_path,
                 output_path,
             )
-            print(
-                f"input_path={input_path!r}, "
-                f"type={type(input_path)}, "
-                f"output_path={output_path!r}, "
-                f"type={type(output_path)}"
-            )
+
             await asyncio.to_thread(
                 convert_image,
                 input_path,
@@ -552,53 +547,64 @@ async def handle_event(event: dict[str, Any]) -> dict[str, Any]:
     """
     Process all SQS records in one Lambda invocation.
 
+    The database engine/pool is scoped to this event loop and disposed before
+    the loop created by asyncio.run() is closed. This prevents asyncpg/
+    SQLAlchemy connections from being reused across different event loops.
+
     Returns partial batch failures so that a failed message can be
     retried without forcing successful messages in the same batch
     to be retried.
     """
 
-    batch_item_failures: list[dict[str, str]] = []
+    engine, session_local = create_db()
 
-    records = event.get("Records", [])
+    try:
+        batch_item_failures: list[dict[str, str]] = []
 
-    logger.info(
-        "Received %d SQS record(s)",
-        len(records),
-    )
+        records = event.get("Records", [])
 
-    for record in records:
+        logger.info(
+            "Received %d SQS record(s)",
+            len(records),
+        )
 
-        message_id = record.get("messageId")
+        for record in records:
+            message_id = record.get("messageId")
 
-        try:
-            body = json.loads(record["body"])
+            try:
+                body = json.loads(record["body"])
+                job_id = UUID(body["job_id"])
 
-            job_id = UUID(body["job_id"])
-
-            logger.info(
-                "Received SQS message %s for job %s",
-                message_id,
-                job_id,
-            )
-
-            await process_job(job_id)
-
-        except Exception:
-            logger.exception(
-                "Failed to process SQS message %s",
-                message_id,
-            )
-
-            if message_id:
-                batch_item_failures.append(
-                    {
-                        "itemIdentifier": message_id,
-                    }
+                logger.info(
+                    "Received SQS message %s for job %s",
+                    message_id,
+                    job_id,
                 )
 
-    return {
-        "batchItemFailures": batch_item_failures,
-    }
+                await process_job(
+                    job_id=job_id,
+                    session_local=session_local,
+                )
+
+            except Exception:
+                logger.exception(
+                    "Failed to process SQS message %s",
+                    message_id,
+                )
+
+                if message_id:
+                    batch_item_failures.append(
+                        {
+                            "itemIdentifier": message_id,
+                        }
+                    )
+
+        return {
+            "batchItemFailures": batch_item_failures,
+        }
+
+    finally:
+        await engine.dispose()
 
 
 def lambda_handler(

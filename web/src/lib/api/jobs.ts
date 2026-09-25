@@ -1,5 +1,12 @@
 export type JobOperation = 'compress' | 'convert';
 
+export type JobStatus =
+	| 'draft'
+	| 'pending'
+	| 'processing'
+	| 'completed'
+	| 'failed';
+
 export type PresignResponse = {
 	job_id: string;
 	upload_url: string;
@@ -13,6 +20,15 @@ export type StartJobResponse = {
 	operation: JobOperation;
 	input_key: string;
 	credits_remaining: number;
+};
+
+export type JobStatusPollResponse = {
+	id: string;
+	status: JobStatus;
+	operation: JobOperation;
+	error_message: string | null;
+	download_url: string | null;
+	download_expires_in: number | null;
 };
 
 export class ApiError extends Error {
@@ -30,6 +46,18 @@ export class ApiError extends Error {
 function errorMessageFromDetail(detail: unknown, fallback: string): string {
 	if (typeof detail === 'string' && detail.trim()) {
 		return detail;
+	}
+
+	if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+		const record = detail as { message?: unknown; msg?: unknown };
+
+		if (typeof record.message === 'string' && record.message.trim()) {
+			return record.message;
+		}
+
+		if (typeof record.msg === 'string' && record.msg.trim()) {
+			return record.msg;
+		}
 	}
 
 	if (Array.isArray(detail) && detail.length > 0) {
@@ -170,4 +198,36 @@ export async function startJob(
 	}
 
 	return (await response.json()) as StartJobResponse;
+}
+
+export async function pollJobStatus(
+	jobId: string,
+	getToken?: () => Promise<string | null>,
+): Promise<JobStatusPollResponse> {
+	const response = await fetch(`/api/jobs/${jobId}/job-status-poll`, {
+		method: 'GET',
+		credentials: 'include',
+		headers: await authHeaders(getToken),
+	});
+
+	if (!response.ok) {
+		throw await parseError(
+			response,
+			"We couldn't check the status of your file. Try again.",
+		);
+	}
+
+	return (await response.json()) as JobStatusPollResponse;
+}
+
+/** Poll interval in ms. Override with PUBLIC_JOB_POLL_INTERVAL_MS. */
+export function getJobPollIntervalMs(): number {
+	const raw = import.meta.env.PUBLIC_JOB_POLL_INTERVAL_MS;
+	const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+
+	if (Number.isFinite(parsed) && parsed >= 500) {
+		return parsed;
+	}
+
+	return 3000;
 }

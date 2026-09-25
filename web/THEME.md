@@ -4,13 +4,14 @@
 
 Tinkertaps is a simple web application for working with everyday files.
 
-A user chooses a file, selects what they want to do with it, and receives the resulting file when the work is finished.
+A user opens a specific tool, uploads a matching file, and receives the resulting file when the work is finished.
 
 Examples include:
 
-- making an image smaller
-- changing a file's format
-- extracting text from a PDF
+- JPEG to PNG
+- PNG to WebP
+- PDF to text
+- MD to HTML
 
 The backend may model these operations as asynchronous jobs, workers, queues, and stored objects.
 
@@ -18,7 +19,9 @@ The normal user interface must not expose that mental model.
 
 The user-facing mental model is:
 
-**Choose → change → done**
+**Pick a tool → upload → done**
+
+Routes follow `/tools/{category}/{slug}` (for example `/tools/image/jpeg-to-png`).
 
 Tinkertaps is not a file manager, cloud drive, developer tool, or infrastructure dashboard.
 
@@ -55,34 +58,55 @@ The design is primarily high-contrast grayscale.
 
 Colour is a small accent in the room. It must never take over the interface.
 
+Each tool category may shift only the primary and accent colours:
+
+| Category | Accent direction |
+| --- | --- |
+| Image | muted green (default) |
+| PDF | muted red |
+| Text | muted blue |
+
+Set `data-category="image|pdf|text"` on the page shell so CSS variables update. Do not change the grayscale base palette.
+
 ---
 
 # Core design principles
 
-## 1. Use the user's language
+## 1. Use explicit tool language
 
-Describe what the user wants to do, not how the backend performs it.
+Name tools by the formats they convert between.
 
 Prefer:
 
-- Choose a file
-- Make it smaller
-- Change the format
-- Pull out the text
+- JPEG to PNG
+- PNG to WebP
+- PDF to text
+- MD to HTML
+- Compress image
+- Compress PDF
+- Choose file
+- Upload
 - Working on it
 - Ready
 - Download
 - Try again
-- Your files
+- Coming soon
 
-Avoid:
+Avoid vague or overly conversational tool names:
+
+- Make it smaller
+- Change the format
+- Pull out the text
+- Drop it in
+- Your file, your way
+
+Also avoid infrastructure language in the UI:
 
 - Create job
 - Start job
 - Process file
 - Queue job
 - Worker
-- Object
 - Object key
 - Presigned URL
 - Processing pipeline
@@ -91,26 +115,6 @@ Avoid:
 The word `job` may be used internally in code, APIs, database schemas, and developer-facing tools.
 
 It should generally not appear in the normal product interface.
-
-Technical verbs should be replaced with ordinary verbs when the meaning remains clear.
-
-Prefer:
-
-`Make it smaller`
-
-over:
-
-`Compress image`
-
-Prefer:
-
-`Pull out the text`
-
-over:
-
-`Extract text`
-
-Clarity still matters. Do not make language childish or vague simply to avoid technical terms.
 
 ---
 
@@ -122,7 +126,7 @@ Examples:
 
 Landing page:
 
-`Choose a file`
+`JPEG to PNG` or `Browse tools`
 
 Login:
 
@@ -132,9 +136,9 @@ Register:
 
 `Create account`
 
-File action selection:
+Tool page:
 
-`Continue`
+`Choose file` then `Upload`
 
 Ready file:
 
@@ -197,9 +201,9 @@ More specific language may be used when useful.
 
 Examples:
 
-- Making it smaller
-- Changing the format
-- Pulling out the text
+- JPEG to PNG
+- Compressing image
+- Extracting text
 
 Do not expose infrastructure states such as:
 
@@ -393,16 +397,23 @@ Do not preserve desktop composition at the cost of usability on small screens.
 
 # Navigation
 
-The main navigation is intentionally small.
+The main navigation is shared across marketing, tool, and desk pages.
 
-The Tinkertaps mark appears on the left.
+Desktop layout:
 
-Contextual account actions appear on the right.
+- Left: Tinkertaps mark
+- Centre-left: category dropdowns — Image, PDF, Text
+- Right: account actions (Log in / Register, or Desk + profile)
 
-On the landing page:
+Dropdown items link to `/tools/{category}/{slug}`.
 
-- Log in
-- Get started
+Unsupported tools appear in the list as disabled rows with a quiet `Soon` label. Do not link them.
+
+Mobile layout:
+
+- Hamburger menu
+- Accordion sections per category (same catalog)
+- Account actions at the bottom of the menu
 
 On the login page:
 
@@ -414,9 +425,7 @@ On the register page:
 - Already have an account?
 - Log in
 
-Navigation copy should reflect the page the user is currently viewing.
-
-Do not show actions that redundantly describe the current page.
+Signed-in users must see their profile control on tool pages as well as the desk. Do not show Log in / Register when the session is authenticated.
 
 The navigation should remain visually quiet.
 
@@ -434,10 +443,12 @@ btn btn-primary
 
 Examples:
 
-- Choose a file
+- Choose file
+- Upload
 - Create account
 - Log in
 - Download
+- JPEG to PNG
 
 ## Secondary action
 
@@ -447,9 +458,10 @@ btn btn-ghost
 
 Examples:
 
-- How it works
+- Browse tools
 - Cancel
 - Back
+- Change
 
 ## Compact action
 
@@ -461,7 +473,7 @@ Use for navigation and small actions inside file panels.
 
 ## Button rules
 
-Buttons use direct verbs.
+Buttons use direct verbs and explicit tool names.
 
 Prefer:
 
@@ -473,11 +485,11 @@ over:
 
 Prefer:
 
-`Try again`
+`Upload`
 
 over:
 
-`Retry processing job`
+`Upload your file to get started`
 
 Do not use gradients.
 
@@ -619,7 +631,7 @@ Example:
 ```text
 ● Uploaded
 │
-● Made smaller
+● JPEG to PNG
 │
 ● Ready
 ```
@@ -751,15 +763,15 @@ Respect `prefers-reduced-motion`.
 
 The landing page has one job:
 
-**Help the user understand Tinkertaps and choose a file.**
+**Help the user understand Tinkertaps and open a tool.**
 
-The hero uses the language:
+The hero uses explicit language:
 
-> Drop it in.  
-> Choose what you need.  
-> Take the result.
+> Pick a tool.  
+> Upload a file.  
+> Get the result.
 
-The page demonstrates the file progress rail.
+The page lists tools by category (Image, PDF, Text) with live links and Coming soon markers.
 
 Do not add:
 
@@ -772,10 +784,11 @@ Do not add:
 The current landing page structure is:
 
 1. navigation
-2. hero and file example
-3. three-step explanation
-4. final call to action
-5. footer
+2. hero and conversion example
+3. tools by category
+4. three-step explanation
+5. final call to action
+6. footer
 
 Do not substantially expand this page without a product reason.
 
@@ -820,35 +833,30 @@ Avoid developer-oriented explanations about persistent file history or stored re
 
 ---
 
-## File selection
+## Tool page
 
-The file selection page should feel like placing something on the desk.
+Each tool lives at `/tools/{category}/{slug}`.
 
-The primary interaction is choosing or dropping a file.
+The operation is already chosen by the route. Do not ask the user what they want to do after upload.
 
-The drop area should be visually obvious without becoming a giant decorative upload widget.
+Live tools show:
+
+- category label
+- explicit title (for example `JPEG to PNG`)
+- short description
+- file upload with an `accept` filter for that tool only
+
+Coming soon tools show a short unavailable message and a link to a live tool. Do not show an upload control.
 
 After a file is selected, show:
 
 - filename
 - file size
-- relevant file type
-- remove or replace action
+- file type
+- change / replace action
+- primary `Upload` button
 
-Then ask what the user wants to do.
-
-Only show actions relevant to the selected file type.
-
-For example, an image may offer:
-
-- Make it smaller
-- Change the format
-
-A PDF may offer:
-
-- Pull out the text
-
-Do not show unavailable actions as a huge disabled catalogue.
+Reject files that do not match the tool's allowed types.
 
 ---
 
@@ -892,7 +900,7 @@ Explain what could not be completed in ordinary language.
 
 Example:
 
-> We couldn't make this image smaller.
+> We couldn't convert this JPEG to PNG.
 
 When the user can act:
 
@@ -928,17 +936,19 @@ Do not lead with vanity statistics.
 
 # Writing style
 
-Tinkertaps uses plain, conversational English.
+Tinkertaps uses clear, explicit English.
 
 Use active voice.
 
 Keep sentences short.
 
-Interface text should sound like a useful object, not a company salesperson.
+Name tools by format pairs (`JPEG to PNG`, `MD to HTML`) rather than informal paraphrases.
+
+Interface text should sound like a useful tool, not a company salesperson.
 
 Prefer:
 
-`Choose a file`
+`Choose file`
 
 over:
 
@@ -954,7 +964,7 @@ over:
 
 Prefer:
 
-`We couldn't change this file`
+`We couldn't convert this file`
 
 over:
 
@@ -972,7 +982,7 @@ Avoid filler words such as:
 
 Do not describe Tinkertaps as an AI product unless a real user-facing feature specifically requires that explanation.
 
-Do not use technical language simply because the implementation is technically interesting.
+Do not use infrastructure language simply because the implementation is technically interesting.
 
 ---
 
@@ -1006,11 +1016,9 @@ Before considering a page finished, ask:
 
 - Is the next useful action obvious?
 - Is there only one dominant action in the current visual region?
-- Does the copy describe what the user wants rather than how the backend works?
+- Does the copy use explicit tool names (`JPEG to PNG`) rather than vague paraphrases?
 - Did the word `job` leak into the interface?
-- Can a technical verb be replaced with a clearer ordinary verb?
-- Is the page still primarily grayscale?
-- Is the accent colour being used sparingly?
+- Is the page still primarily grayscale, with category accents limited to primary/accent?
 - Are semantic DaisyUI colours used instead of fixed palette colours?
 - Are borders doing work that would otherwise become unnecessary shadows?
 - Is monospace limited to small structural information?
