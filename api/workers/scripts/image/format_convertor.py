@@ -14,7 +14,11 @@ SUPPORTED_FORMATS = {
 }
 
 
-def convert_image(input_path: Path, output_path: Path) -> None:
+def convert_image(
+    input_path: Path,
+    output_path: Path,
+    background_color: str = "white",
+) -> None:
     input_format = SUPPORTED_FORMATS.get(input_path.suffix.lower())
     output_format = SUPPORTED_FORMATS.get(output_path.suffix.lower())
 
@@ -31,7 +35,15 @@ def convert_image(input_path: Path, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with Image.open(input_path) as image:
-        if output_format == "JPEG" and image.mode in ("RGBA", "LA", "P"):
+        if output_format == "JPEG" and (
+            image.mode in ("RGBA", "LA")
+            or image.mode == "P" and "transparency" in image.info
+        ):
+            rgba_image = image.convert("RGBA")
+            background = Image.new("RGB", image.size, background_color)
+            background.paste(rgba_image, mask=rgba_image.getchannel("A"))
+            image = background
+        elif output_format == "JPEG" and image.mode != "RGB":
             image = image.convert("RGB")
 
         image.save(output_path, format=output_format)

@@ -3,13 +3,16 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
 	ApiError,
+	buildPresignRequest,
 	createPresignedUpload,
 	getJobPollIntervalMs,
+	getOperationOptions,
 	pollJobStatus,
 	startJob,
 	uploadFileToPresignedUrl,
 	type JobOperation,
 } from '../../lib/api/jobs';
+import { validateOperationFile, type ToolOperation } from '../../lib/operations';
 
 type Phase =
 	| 'idle'
@@ -21,10 +24,7 @@ type Phase =
 	| 'failed';
 
 type Props = {
-	title: string;
-	accept: string;
-	allowedTypes: string[];
-	apiOperation: JobOperation;
+	operation: ToolOperation & { apiOperation: JobOperation };
 };
 
 /**
@@ -38,6 +38,14 @@ function formatBytes(bytes: number) {
 	}
 
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatTargetSize(bytes: number) {
+	if (bytes >= 1024 * 1024) {
+		return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	}
+
+	return `${(bytes / 1024).toFixed(0)} KB`;
 }
 
 function formatExpiry(seconds: number) {
@@ -60,23 +68,6 @@ function getFileLabel(file: File) {
 	const extension = file.name.split('.').pop();
 
 	return extension?.toUpperCase() ?? 'FILE';
-}
-
-function isAllowedType(file: File, allowedTypes: string[]) {
-	if (allowedTypes.includes(file.type)) {
-		return true;
-	}
-
-	const name = file.name.toLowerCase();
-
-	if (
-		allowedTypes.includes('image/jpeg') &&
-		(name.endsWith('.jpg') || name.endsWith('.jpeg'))
-	) {
-		return true;
-	}
-
-	return false;
 }
 
 function acceptHint(accept: string) {
@@ -163,11 +154,9 @@ function ErrorAlert({
 }
 
 export default function OperationUpload({
-	title,
-	accept,
-	allowedTypes,
-	apiOperation,
+	operation,
 }: Props) {
+	const { title, accept, apiOperation } = operation;
 	const { getToken, isLoaded, isSignedIn } = useAuth();
 	const inputRef = useRef<HTMLInputElement>(null);
 
@@ -183,6 +172,13 @@ export default function OperationUpload({
 	const [downloadExpiresIn, setDownloadExpiresIn] = useState<number | null>(
 		null,
 	);
+	const [downloadFilename, setDownloadFilename] = useState<string | null>(
+		null,
+	);
+	const [compressTarget, setCompressTarget] = useState('250000');
+	const [maxWidth, setMaxWidth] = useState('2048');
+	const [maxHeight, setMaxHeight] = useState('2048');
+	const [outputFormat, setOutputFormat] = useState(operation.outputFormat);
 	const [statusLabel, setStatusLabel] = useState('Working on it');
 
 	const typeHint = acceptHint(accept) || 'FILE';
@@ -225,6 +221,22 @@ export default function OperationUpload({
 
 					setDownloadUrl(result.download_url);
 					setDownloadExpiresIn(result.download_expires_in);
+					setDownloadFilename(
+						result.filename ??
+							result.output_filename ??
+							result.download_filename ??
+							null,
+					);
+					const serverFilename =
+						result.filename ??
+						result.output_filename ??
+						result.download_filename;
+					if (serverFilename) {
+						setOutputFormat(
+							serverFilename.split('.').pop()?.toUpperCase() ??
+								operation.outputFormat,
+						);
+					}
 					setPhase('completed');
 					return;
 				}
@@ -261,11 +273,19 @@ export default function OperationUpload({
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
+		setDownloadFilename(null);
+		setOutputFormat(
+			operation.outputFormat === 'same as input'
+				? next.name.split('.').pop()?.toUpperCase() ?? operation.outputFormat
+				: operation.outputFormat,
+		);
 		setStatusLabel('Working on it');
 
-		if (!isAllowedType(next, allowedTypes)) {
+		const validationError = validateOperationFile(next, operation);
+
+		if (validationError) {
 			setFile(null);
-			setError(`Choose a ${typeHint.replace(/ · /g, ' or ')} file.`);
+			setError(validationError);
 			return;
 		}
 
@@ -280,6 +300,8 @@ export default function OperationUpload({
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
+		setDownloadFilename(null);
+		setOutputFormat(operation.outputFormat);
 		setStatusLabel('Working on it');
 
 		if (inputRef.current) {
@@ -301,33 +323,34 @@ export default function OperationUpload({
 		setPhase('uploading');
 
 		try {
-			let contentType = file.type;
+			const optionResult = getOperationOptions(operation.optionKind, {
+				targetSizeBytes: Number(compressTarget),
+				maxWidth: Number(maxWidth),
+				maxHeight: Number(maxHeight),
+			});
 
-			if (!contentType) {
-				if (
-					allowedTypes.includes('image/jpeg') &&
-					/\.jpe?g$/i.test(file.name)
-				) {
-					contentType = 'image/jpeg';
-				} else {
-					contentType =
-						allowedTypes[0] ?? 'application/octet-stream';
-				}
+			if (optionResult.error) {
+				setPhase('idle');
+				setError(optionResult.error);
+				return;
 			}
 
 			const presign = await createPresignedUpload(
-				{
+				buildPresignRequest({
 					operation: apiOperation,
 					filename: file.name,
-					content_type: contentType,
-				},
+					content_type: file.type,
+					...(optionResult.options
+						? { operation_options: optionResult.options }
+						: {}),
+				}),
 				getToken,
 			);
 
 			await uploadFileToPresignedUrl(
 				presign.upload_url,
 				file,
-				contentType,
+				file.type,
 			);
 
 			setJobId(presign.job_id);
@@ -376,6 +399,11 @@ export default function OperationUpload({
 	const errorAlert = error ? (
 		<ErrorAlert message={error} onDismiss={() => setError(null)} />
 	) : null;
+	const optionResult = getOperationOptions(operation.optionKind, {
+		targetSizeBytes: Number(compressTarget),
+		maxWidth: Number(maxWidth),
+		maxHeight: Number(maxHeight),
+	});
 
 	if (!file) {
 		return (
@@ -498,6 +526,64 @@ export default function OperationUpload({
 						Upload this file to start {title.toLowerCase()}.
 					</p>
 
+					{operation.optionKind === 'compress' && (
+						<div className="mt-8 max-w-sm">
+							<label className="text-sm font-medium" htmlFor="target-size">
+								Maximum target size (bytes)
+							</label>
+							<input
+								id="target-size"
+								type="number"
+								min="1"
+								step="1"
+								className="input input-bordered mt-2 w-full"
+								value={compressTarget}
+								onChange={(event) => setCompressTarget(event.target.value)}
+							/>
+							<p className="mt-2 text-sm text-base-content/50">
+								{Number(compressTarget) > 0 && Number.isFinite(Number(compressTarget))
+									? `About ${formatTargetSize(Number(compressTarget))}. `
+									: ''}
+								This is a maximum target and may not be achievable for every image.
+							</p>
+						</div>
+					)}
+
+					{operation.optionKind === 'downsample' && (
+						<div className="mt-8 grid max-w-xl gap-4 sm:grid-cols-2">
+							<label className="text-sm font-medium" htmlFor="max-width">
+								Maximum width
+								<input
+									id="max-width"
+									type="number"
+									min="1"
+									step="1"
+									className="input input-bordered mt-2 w-full"
+									value={maxWidth}
+									onChange={(event) => setMaxWidth(event.target.value)}
+								/>
+							</label>
+							<label className="text-sm font-medium" htmlFor="max-height">
+								Maximum height
+								<input
+									id="max-height"
+									type="number"
+									min="1"
+									step="1"
+									className="input input-bordered mt-2 w-full"
+									value={maxHeight}
+									onChange={(event) => setMaxHeight(event.target.value)}
+								/>
+							</label>
+						</div>
+					)}
+
+					{optionResult.error && (
+						<p className="mt-3 text-sm text-error" role="alert">
+							{optionResult.error}
+						</p>
+					)}
+
 					{isLoaded && !isSignedIn && (
 						<p className="mt-4 text-sm text-base-content/55">
 							<a
@@ -519,7 +605,7 @@ export default function OperationUpload({
 							type="button"
 							className="btn btn-primary"
 							onClick={handleUpload}
-							disabled={!canUpload}
+							disabled={!canUpload || Boolean(optionResult.error)}
 						>
 							Upload
 						</button>
@@ -638,7 +724,7 @@ export default function OperationUpload({
 							</h2>
 
 							<p className="mt-3 max-w-xl leading-7 text-base-content/50">
-								{title} finished successfully.
+								{title} finished successfully. Output format: {outputFormat}.
 							</p>
 
 							{downloadExpiresIn !== null && (
@@ -652,7 +738,7 @@ export default function OperationUpload({
 								<a
 									href={downloadUrl}
 									className="btn btn-primary"
-									download
+									download={downloadFilename ?? undefined}
 								>
 									Download
 								</a>

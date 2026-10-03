@@ -19,12 +19,16 @@ services:
     expose:
       - "5432"
 
+    ports:
+      - "5432:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
 
     networks:
       - backend
+      - edge
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-tinkertaps}"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import PurePosixPath
+from typing import Any
 
 from fastapi import HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -64,6 +65,7 @@ async def create_draft_job_with_presign(
     operation: Operation,
     filename: str,
     content_type: str,
+    operation_options: dict[str, Any] | None = None,
 ) -> tuple[Job, str, int]:
     await ensure_credits_for_new_draft(db, user)
 
@@ -75,6 +77,7 @@ async def create_draft_job_with_presign(
         id=job_id,
         user_id=user.id,
         operation=operation,
+        operation_options=operation_options,
         status=JobStatus.DRAFT,
         input_key=input_key,
     )

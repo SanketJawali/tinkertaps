@@ -43,6 +43,11 @@ async def create_presigned_upload(
         db=db,
         user=auth.user,
         operation=body.operation,
+        operation_options=(
+            body.operation_options.model_dump(exclude_none=True)
+            if body.operation_options is not None
+            else None
+        ),
         filename=body.filename,
         content_type=body.content_type,
     )
@@ -82,6 +87,7 @@ async def job_status_poll(
         id=job.id,
         status=job.status,
         operation=job.operation,
+        operation_options=job.operation_options,
         error_message=job.error_message,
         download_url=download_url,
         download_expires_in=download_expires_in,
@@ -169,6 +175,7 @@ async def start_job(
         id=job.id,
         status=job.status,
         operation=job.operation,
+        operation_options=job.operation_options,
         input_key=job.input_key,
         credits_remaining=auth.user.credits,
     )

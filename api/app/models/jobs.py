@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,7 +23,14 @@ if TYPE_CHECKING:
 
 class Operation(str, PyEnum):
     CONVERT = "convert"
+    JPEG_TO_PNG = "jpeg_to_png"
     COMPRESS = "compress"
+    PNG_TO_JPEG = "png_to_jpeg"
+    PNG_TO_WEBP = "png_to_webp"
+    WEBP_TO_PNG = "webp_to_png"
+    WEBP_TO_JPEG = "webp_to_jpeg"
+    JPEG_TO_WEBP = "jpeg_to_webp"
+    DOWNSAMPLE = "downsample"
 
 
 class JobStatus(str, PyEnum):
@@ -52,6 +60,11 @@ class Job(Base):
     operation: Mapped[Operation] = mapped_column(
         Enum(Operation, name="operation"),
         nullable=False,
+    )
+
+    operation_options: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
     )
 
     status: Mapped[JobStatus] = mapped_column(

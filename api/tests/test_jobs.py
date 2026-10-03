@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -108,6 +108,9 @@ async def test_presign_creates_draft_job_and_sets_anon_cookie(job_client):
                 "operation": "compress",
                 "filename": "photo.png",
                 "content_type": "image/png",
+                "operation_options": {
+                    "target_size_bytes": 250000,
+                },
             },
         )
 
@@ -118,7 +121,14 @@ async def test_presign_creates_draft_job_and_sets_anon_cookie(job_client):
     assert body["input_key"] == input_key
     assert body["expires_in"] == 3600
     assert settings.anon_cookie_name in response.cookies
-    create_mock.assert_awaited_once()
+    create_mock.assert_awaited_once_with(
+        db=ANY,
+        user=user,
+        operation=Operation.COMPRESS,
+        operation_options={"target_size_bytes": 250000},
+        filename="photo.png",
+        content_type="image/png",
+    )
 
 
 async def test_presign_rejects_insufficient_credits(job_client):
@@ -165,10 +175,16 @@ async def test_start_job_verifies_upload_and_returns_credits(clerk_job_client):
     )
     user.credits = 9
 
-    with patch(
-        "app.api.routes.job.job_service.start_draft_job",
-        new=AsyncMock(return_value=job),
-    ) as start_mock:
+    with (
+        patch(
+            "app.api.routes.job.job_service.start_draft_job",
+            new=AsyncMock(return_value=job),
+        ) as start_mock,
+        patch(
+            "app.api.routes.job.run_in_threadpool",
+            new=AsyncMock(return_value="message-id"),
+        ) as enqueue_mock,
+    ):
         response = await client.post(f"/api/jobs/{job_id}/start")
 
     assert response.status_code == 200
@@ -177,6 +193,7 @@ async def test_start_job_verifies_upload_and_returns_credits(clerk_job_client):
     assert body["status"] == "pending"
     assert body["credits_remaining"] == 9
     start_mock.assert_awaited_once()
+    enqueue_mock.assert_awaited_once()
 
 
 async def test_start_job_not_found(clerk_job_client):

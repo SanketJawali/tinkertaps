@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import shutil
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -23,6 +24,28 @@ from app.core.config import settings
 from app.models.jobs import Job, JobStatus, Operation
 
 from scripts.image.format_convertor import convert_image
+from scripts.image.compress_image import compress_image
+from scripts.image.downsample_image import downsample_image
+from scripts.image.jpeg_to_webp import jpeg_to_webp
+from scripts.image.png_to_jpeg import png_to_jpeg
+from scripts.image.png_to_webp import png_to_webp
+from scripts.image.webp_to_jpeg import webp_to_jpeg
+from scripts.image.webp_to_png import webp_to_png
+
+
+DEFAULT_COMPRESSION_TARGET = 500 * 1024
+DEFAULT_MAX_WIDTH = 2048
+DEFAULT_MAX_HEIGHT = 2048
+
+CONVERSION_OUTPUT_SUFFIXES = {
+    Operation.CONVERT: ".png",
+    Operation.JPEG_TO_PNG: ".png",
+    Operation.PNG_TO_JPEG: ".jpg",
+    Operation.PNG_TO_WEBP: ".webp",
+    Operation.WEBP_TO_PNG: ".png",
+    Operation.WEBP_TO_JPEG: ".jpg",
+    Operation.JPEG_TO_WEBP: ".webp",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +139,10 @@ def get_s3_client():
 # Output key
 # ---------------------------------------------------------------------------
 
-def build_output_key(input_key: str) -> str:
+def build_output_key(
+    input_key: str,
+    operation: Operation,
+) -> str:
     """
     Temporary fallback for output_key.
 
@@ -125,28 +151,29 @@ def build_output_key(input_key: str) -> str:
 
         uploads/<user>/<job>/photo.jpeg
 
-    into:
+    into the operation's output format, for example:
 
         outputs/<user>/<job>/photo.png
-
-    Later, when the requested output format is stored in the Job,
-    this function can be replaced/expanded.
     """
 
     path = PurePosixPath(input_key)
+    output_suffix = CONVERSION_OUTPUT_SUFFIXES.get(
+        operation,
+        path.suffix.lower(),
+    )
 
     if len(path.parts) >= 2 and path.parts[0] == "uploads":
         output_parts = (
             "outputs",
             *path.parts[1:-1],
-            f"{path.stem}.png",
+            f"{path.stem}{output_suffix}",
         )
 
         return str(PurePosixPath(*output_parts))
 
     # Generic fallback if the input key doesn't follow the expected
     # uploads/<user>/<job>/<filename> structure.
-    return str(path.with_suffix(".png"))
+    return str(path.with_suffix(output_suffix))
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +291,7 @@ def upload_to_s3(
     bucket: str,
     key: str,
     source: str,
+    content_type: str,
 ) -> None:
     """
     Upload a processed file to S3.
@@ -281,9 +309,45 @@ def upload_to_s3(
         bucket,
         key,
         ExtraArgs={
-            "ContentType": "image/png",
+            "ContentType": content_type,
         },
     )
+
+
+def process_image(
+    operation: Operation,
+    input_path: Path,
+    output_path: Path,
+    operation_options: dict[str, Any] | None = None,
+) -> None:
+    options = operation_options or {}
+    processors = {
+        Operation.CONVERT: lambda: convert_image(input_path, output_path),
+        Operation.JPEG_TO_PNG: lambda: convert_image(input_path, output_path),
+        Operation.COMPRESS: lambda: compress_image(
+            input_path,
+            output_path,
+            options.get("target_size_bytes", DEFAULT_COMPRESSION_TARGET),
+        ),
+        Operation.PNG_TO_JPEG: lambda: png_to_jpeg(input_path, output_path),
+        Operation.PNG_TO_WEBP: lambda: png_to_webp(input_path, output_path),
+        Operation.WEBP_TO_PNG: lambda: webp_to_png(input_path, output_path),
+        Operation.WEBP_TO_JPEG: lambda: webp_to_jpeg(input_path, output_path),
+        Operation.JPEG_TO_WEBP: lambda: jpeg_to_webp(input_path, output_path),
+        Operation.DOWNSAMPLE: lambda: downsample_image(
+            input_path,
+            output_path,
+            options.get("max_width", DEFAULT_MAX_WIDTH),
+            options.get("max_height", DEFAULT_MAX_HEIGHT),
+        ),
+    }
+
+    try:
+        processor = processors[operation]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported operation: {operation.value}") from exc
+
+    processor()
 
 
 # ---------------------------------------------------------------------------
@@ -405,19 +469,6 @@ async def process_job(
         # 2. Validate the operation
         # ---------------------------------------------------------------
 
-        if job.operation != Operation.CONVERT:
-            error = ValueError(
-                f"Unsupported operation: {job.operation.value}"
-            )
-
-            await mark_job_failed(
-                db,
-                job_id,
-                error,
-            )
-
-            raise error
-
         input_key = job.input_key
 
         # Use the DB value when it exists.
@@ -426,7 +477,7 @@ async def process_job(
         # temporary fallback creates a PNG output key.
         output_key = (
             job.output_key
-            or build_output_key(input_key)
+            or build_output_key(input_key, job.operation)
         )
 
         # ---------------------------------------------------------------
@@ -461,19 +512,22 @@ async def process_job(
             )
 
             # -----------------------------------------------------------
-            # 5. Run the image converter
+            # 5. Run the requested image operation
             # -----------------------------------------------------------
 
             logger.info(
-                "Converting %s -> %s",
+                "Processing %s -> %s with %s",
                 input_path,
                 output_path,
+                job.operation.value,
             )
 
             await asyncio.to_thread(
-                convert_image,
+                process_image,
+                job.operation,
                 input_path,
                 output_path,
+                job.operation_options,
             )
 
             # -----------------------------------------------------------
@@ -485,6 +539,10 @@ async def process_job(
                 bucket=settings.s3_bucket_name,
                 key=output_key,
                 source=str(output_path),
+                content_type=(
+                    mimetypes.guess_type(output_path.name)[0]
+                    or "application/octet-stream"
+                ),
             )
 
             # -----------------------------------------------------------

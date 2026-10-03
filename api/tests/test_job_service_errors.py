@@ -151,7 +151,7 @@ async def test_start_draft_job_queue_failure_rolls_back(user: User, draft_job: J
         patch("app.services.jobs.s3.verify_upload_exists", new=AsyncMock()),
         patch(
             "app.services.jobs.job_queue.enqueue_job",
-            new=AsyncMock(
+            new=MagicMock(
                 side_effect=HTTPException(
                     status_code=503,
                     detail={
@@ -181,7 +181,7 @@ async def test_start_draft_job_success(user: User, draft_job: Job):
 
     with (
         patch("app.services.jobs.s3.verify_upload_exists", new=AsyncMock()),
-        patch("app.services.jobs.job_queue.enqueue_job", new=AsyncMock()),
+        patch("app.services.jobs.job_queue.enqueue_job", new=MagicMock()),
     ):
         job = await job_service.start_draft_job(
             db=db,
@@ -195,6 +195,7 @@ async def test_start_draft_job_success(user: User, draft_job: Job):
 
 async def test_create_draft_job_presign_failure_rolls_back(user: User):
     db = AsyncMock()
+    db.add = MagicMock()
 
     with (
         patch(
@@ -252,7 +253,7 @@ def test_s3_presign_failure_raises_storage_unavailable():
     client = MagicMock()
     client.generate_presigned_url.side_effect = _client_error("AccessDenied")
 
-    with patch("app.services.s3.get_s3_client", return_value=client):
+    with patch("app.services.s3.get_s3_presign_client", return_value=client):
         with pytest.raises(HTTPException) as exc_info:
             s3.create_presigned_upload_url(
                 key="uploads/test.png",

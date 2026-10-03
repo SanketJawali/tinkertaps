@@ -1,4 +1,25 @@
-export type JobOperation = 'compress' | 'convert';
+export type JobOperation =
+	| 'jpeg_to_png'
+	| 'png_to_jpeg'
+	| 'png_to_webp'
+	| 'webp_to_png'
+	| 'webp_to_jpeg'
+	| 'jpeg_to_webp'
+	| 'compress'
+	| 'downsample';
+
+export type OperationOptions =
+	| { target_size_bytes: number }
+	| { max_width: number; max_height: number };
+
+export type OperationOptionKind = 'none' | 'compress' | 'downsample';
+
+export type PresignRequest = {
+	operation: JobOperation;
+	filename: string;
+	content_type: string;
+	operation_options?: OperationOptions;
+};
 
 export type JobStatus =
 	| 'draft'
@@ -29,6 +50,9 @@ export type JobStatusPollResponse = {
 	error_message: string | null;
 	download_url: string | null;
 	download_expires_in: number | null;
+	filename?: string | null;
+	output_filename?: string | null;
+	download_filename?: string | null;
 };
 
 export class ApiError extends Error {
@@ -112,11 +136,7 @@ async function authHeaders(getToken?: () => Promise<string | null>): Promise<Hea
 }
 
 export async function createPresignedUpload(
-	body: {
-		operation: JobOperation;
-		filename: string;
-		content_type: string;
-	},
+	body: PresignRequest,
 	getToken?: () => Promise<string | null>,
 ): Promise<PresignResponse> {
 	const response = await fetch('/api/jobs/presign', {
@@ -137,6 +157,54 @@ export async function createPresignedUpload(
 	}
 
 	return (await response.json()) as PresignResponse;
+}
+
+export function buildPresignRequest(
+	request: PresignRequest,
+): PresignRequest {
+	if (!request.operation_options) {
+		const { operation_options: _unused, ...withoutOptions } = request;
+		return withoutOptions;
+	}
+
+	return request;
+}
+
+export function getOperationOptions(
+	kind: OperationOptionKind,
+	values: {
+		targetSizeBytes?: number;
+		maxWidth?: number;
+		maxHeight?: number;
+	},
+): { options?: OperationOptions; error?: string } {
+	if (kind === 'none') {
+		return {};
+	}
+
+	if (kind === 'compress') {
+		if (!Number.isInteger(values.targetSizeBytes) || values.targetSizeBytes! <= 0) {
+			return { error: 'Enter a positive whole-number target size.' };
+		}
+
+		return { options: { target_size_bytes: values.targetSizeBytes! } };
+	}
+
+	if (
+		!Number.isInteger(values.maxWidth) ||
+		values.maxWidth! <= 0 ||
+		!Number.isInteger(values.maxHeight) ||
+		values.maxHeight! <= 0
+	) {
+		return { error: 'Enter positive whole-number width and height values.' };
+	}
+
+	return {
+		options: {
+			max_width: values.maxWidth!,
+			max_height: values.maxHeight!,
+		},
+	};
 }
 
 function s3ErrorMessage(body: string): string | null {

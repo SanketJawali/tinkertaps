@@ -17,7 +17,7 @@ echo "Installing dependencies..."
 uv pip install \
     --target "$PACKAGE_DIR" \
     boto3 \
-    sqlalchemy \
+    'sqlalchemy[asyncio]' \
     asyncpg \
     pillow \
     pydantic \

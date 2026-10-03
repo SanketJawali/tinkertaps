@@ -59,10 +59,7 @@ const isLive =
 				isLive ? (
 					<OperationUpload
 						client:load
-						title={operation.title}
-						accept={operation.accept}
-						allowedTypes={operation.allowedTypes}
-						apiOperation={operation.apiOperation!}
+						operation={operation as typeof operation & { apiOperation: NonNullable<typeof operation.apiOperation> }}
 					/>
 				) : (
 					<section class="mt-10 rounded-box border border-base-300 p-8 sm:p-10">
