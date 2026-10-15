@@ -97,7 +97,7 @@ def receive_job() -> dict | None:
             MaxNumberOfMessages=1,
             MessageAttributeNames=["All"],
             AttributeNames=["All"],
-            VisibilityTimeout=30,
+            VisibilityTimeout=360,
             WaitTimeSeconds=10,
         )
 

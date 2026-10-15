@@ -19,6 +19,30 @@ def _save_bytes(image: Image.Image, output_format: str, quality: int) -> bytes:
     return buffer.getvalue()
 
 
+def _compress_bytes(
+    image: Image.Image,
+    output_format: str,
+    target_size: int,
+) -> bytes:
+    if output_format == "PNG":
+        data = _save_bytes(image, output_format, 0)
+        if len(data) > target_size:
+            data = _save_bytes(image.quantize(colors=256), output_format, 0)
+        return data
+
+    low, high = 10, 95
+    data = _save_bytes(image, output_format, low)
+    while low <= high:
+        quality = (low + high) // 2
+        candidate = _save_bytes(image, output_format, quality)
+        if len(candidate) <= target_size:
+            data = candidate
+            low = quality + 1
+        else:
+            high = quality - 1
+    return data
+
+
 def compress_image(
     input_path: Path,
     output_path: Path,
@@ -44,21 +68,15 @@ def compress_image(
         elif output_format == "PNG" and image.mode not in ("RGB", "RGBA", "L", "LA", "P"):
             image = image.convert("RGBA")
 
-        if output_format == "PNG":
-            data = _save_bytes(image, output_format, 0)
-            if len(data) > target_size:
-                data = _save_bytes(image.quantize(colors=256), output_format, 0)
-        else:
-            low, high = 10, 95
-            data = _save_bytes(image, output_format, low)
-            while low <= high:
-                quality = (low + high) // 2
-                candidate = _save_bytes(image, output_format, quality)
-                if len(candidate) <= target_size:
-                    data = candidate
-                    low = quality + 1
-                else:
-                    high = quality - 1
+        data = _compress_bytes(image, output_format, target_size)
+
+        while len(data) > target_size and min(image.size) > 1:
+            width = max(1, int(image.width * 0.8))
+            height = max(1, int(image.height * 0.8))
+            if (width, height) == image.size:
+                break
+            image = image.resize((width, height), Image.Resampling.LANCZOS)
+            data = _compress_bytes(image, output_format, target_size)
 
         if len(data) > target_size:
             raise ValueError(

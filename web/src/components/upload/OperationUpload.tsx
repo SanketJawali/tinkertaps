@@ -6,12 +6,19 @@ import {
 	buildPresignRequest,
 	createPresignedUpload,
 	getJobPollIntervalMs,
+	getJobPollTimeoutMs,
 	getOperationOptions,
 	pollJobStatus,
 	startJob,
 	uploadFileToPresignedUrl,
 	type JobOperation,
 } from '../../lib/api/jobs';
+import {
+	clearStoredJob,
+	getJobStorageKey,
+	getStoredJob,
+	setStoredJob,
+} from '../../lib/jobStorage';
 import { validateOperationFile, type ToolOperation } from '../../lib/operations';
 
 type Phase =
@@ -64,8 +71,8 @@ function formatExpiry(seconds: number) {
 	return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-function getFileLabel(file: File) {
-	const extension = file.name.split('.').pop();
+function getFileLabel(filename: string) {
+	const extension = filename.split('.').pop();
 
 	return extension?.toUpperCase() ?? 'FILE';
 }
@@ -159,12 +166,18 @@ export default function OperationUpload({
 	const { title, accept, apiOperation } = operation;
 	const { getToken, isLoaded, isSignedIn } = useAuth();
 	const inputRef = useRef<HTMLInputElement>(null);
+	const storageKey = getJobStorageKey(apiOperation);
 
 	const [file, setFile] = useState<File | null>(null);
+	const [restoredFileInfo, setRestoredFileInfo] = useState<{
+		name: string;
+		size: number;
+	} | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [phase, setPhase] = useState<Phase>('idle');
 	const [jobId, setJobId] = useState<string | null>(null);
+	const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(
 		null,
 	);
@@ -181,16 +194,72 @@ export default function OperationUpload({
 	const [outputFormat, setOutputFormat] = useState(operation.outputFormat);
 	const [statusLabel, setStatusLabel] = useState('Working on it');
 
+	const activeFile = file
+		? { name: file.name, size: file.size }
+		: restoredFileInfo;
+
 	const typeHint = acceptHint(accept) || 'FILE';
 	const canUpload = isLoaded && isSignedIn;
 
+	const activeFileRef = useRef(activeFile);
+	activeFileRef.current = activeFile;
+	const creditsRemainingRef = useRef(creditsRemaining);
+	creditsRemainingRef.current = creditsRemaining;
+	const outputFormatRef = useRef(outputFormat);
+	outputFormatRef.current = outputFormat;
+	const pollStartedAtRef = useRef(pollStartedAt);
+	pollStartedAtRef.current = pollStartedAt;
+
+	// Restore active job from localStorage on initial mount
 	useEffect(() => {
-		if (phase !== 'polling' || !jobId) {
+		const stored = getStoredJob(storageKey);
+		if (!stored) {
+			return;
+		}
+
+		setJobId(stored.jobId);
+		setRestoredFileInfo({
+			name: stored.fileName,
+			size: stored.fileSize,
+		});
+		setPhase(stored.phase);
+		setPollStartedAt(stored.startedAt);
+		if (stored.statusLabel) {
+			setStatusLabel(stored.statusLabel);
+		}
+		if (stored.creditsRemaining !== undefined && stored.creditsRemaining !== null) {
+			setCreditsRemaining(stored.creditsRemaining);
+		}
+		if (stored.downloadUrl) {
+			setDownloadUrl(stored.downloadUrl);
+		}
+		if (stored.downloadExpiresIn !== undefined) {
+			setDownloadExpiresIn(stored.downloadExpiresIn);
+		}
+		if (stored.downloadFilename) {
+			setDownloadFilename(stored.downloadFilename);
+		}
+		if (stored.outputFormat) {
+			setOutputFormat(stored.outputFormat);
+		}
+		if (stored.error) {
+			setError(stored.error);
+		}
+	}, [storageKey]);
+
+	useEffect(() => {
+		if (phase !== 'polling' || !jobId || !isLoaded) {
 			return;
 		}
 
 		let cancelled = false;
 		const intervalMs = getJobPollIntervalMs();
+		const timeoutMs = getJobPollTimeoutMs();
+		const startTime = pollStartedAtRef.current || Date.now();
+		if (!pollStartedAtRef.current) {
+			pollStartedAtRef.current = startTime;
+			setPollStartedAt(startTime);
+		}
 
 		async function tick() {
 			try {
@@ -200,58 +269,154 @@ export default function OperationUpload({
 					return;
 				}
 
-				if (result.status === 'pending') {
-					setStatusLabel('Waiting');
-					return;
-				}
-
-				if (result.status === 'processing') {
-					setStatusLabel('Working on it');
-					return;
-				}
-
 				if (result.status === 'completed') {
 					if (!result.download_url) {
-						setError(
-							'The file is ready, but the download link is missing. Try again.',
-						);
+						const missingMsg =
+							'The file is ready, but the download link is missing. Try again.';
+						setError(missingMsg);
 						setPhase('failed');
+						setStoredJob(storageKey, {
+							jobId: jobId!,
+							operation: apiOperation,
+							category: operation.category,
+							slug: operation.slug,
+							fileName: activeFileRef.current?.name ?? 'file',
+							fileSize: activeFileRef.current?.size ?? 0,
+							phase: 'failed',
+							startedAt: startTime,
+							error: missingMsg,
+						});
 						return;
 					}
 
 					setDownloadUrl(result.download_url);
 					setDownloadExpiresIn(result.download_expires_in);
-					setDownloadFilename(
+					const finalFilename =
 						result.filename ??
-							result.output_filename ??
-							result.download_filename ??
-							null,
-					);
+						result.output_filename ??
+						result.download_filename ??
+						null;
+					setDownloadFilename(finalFilename);
+
 					const serverFilename =
 						result.filename ??
 						result.output_filename ??
 						result.download_filename;
+					let finalFormat = outputFormatRef.current;
 					if (serverFilename) {
-						setOutputFormat(
+						finalFormat =
 							serverFilename.split('.').pop()?.toUpperCase() ??
-								operation.outputFormat,
-						);
+							operation.outputFormat;
+						setOutputFormat(finalFormat);
 					}
+
 					setPhase('completed');
+					setStoredJob(storageKey, {
+						jobId: jobId!,
+						operation: apiOperation,
+						category: operation.category,
+						slug: operation.slug,
+						fileName: activeFileRef.current?.name ?? 'file',
+						fileSize: activeFileRef.current?.size ?? 0,
+						phase: 'completed',
+						startedAt: startTime,
+						downloadUrl: result.download_url,
+						downloadExpiresIn: result.download_expires_in,
+						downloadFilename: finalFilename,
+						outputFormat: finalFormat,
+					});
 					return;
 				}
 
 				if (result.status === 'failed') {
-					setError(
+					const failureMsg =
 						result.error_message?.trim() ||
-							`We couldn't finish ${title.toLowerCase()}.`,
-					);
+						`We couldn't finish ${title.toLowerCase()}.`;
+					setError(failureMsg);
 					setPhase('failed');
+					setStoredJob(storageKey, {
+						jobId: jobId!,
+						operation: apiOperation,
+						category: operation.category,
+						slug: operation.slug,
+						fileName: activeFileRef.current?.name ?? 'file',
+						fileSize: activeFileRef.current?.size ?? 0,
+						phase: 'failed',
+						startedAt: startTime,
+						error: failureMsg,
+					});
+					return;
 				}
+
+				// Check if the polling has exceeded the hard time limit
+				const elapsed = Date.now() - startTime;
+				if (elapsed >= timeoutMs) {
+					const timeoutMsg =
+						'The job took too long to complete. Polling timed out.';
+					setError(timeoutMsg);
+					setPhase('failed');
+					setStoredJob(storageKey, {
+						jobId: jobId!,
+						operation: apiOperation,
+						category: operation.category,
+						slug: operation.slug,
+						fileName: activeFileRef.current?.name ?? 'file',
+						fileSize: activeFileRef.current?.size ?? 0,
+						phase: 'failed',
+						startedAt: startTime,
+						error: timeoutMsg,
+					});
+					return;
+				}
+
+				let label = 'Working on it';
+				if (result.status === 'pending') {
+					label = 'Waiting';
+					setStatusLabel('Waiting');
+				} else if (result.status === 'processing') {
+					label = 'Working on it';
+					setStatusLabel('Working on it');
+				}
+
+				setStoredJob(storageKey, {
+					jobId: jobId!,
+					operation: apiOperation,
+					category: operation.category,
+					slug: operation.slug,
+					fileName: activeFileRef.current?.name ?? 'file',
+					fileSize: activeFileRef.current?.size ?? 0,
+					phase: 'polling',
+					statusLabel: label,
+					startedAt: startTime,
+					creditsRemaining: creditsRemainingRef.current,
+					outputFormat: outputFormatRef.current,
+				});
 			} catch (err) {
-				if (!cancelled) {
-					setError(userFacingError(err));
+				if (cancelled) {
+					return;
 				}
+
+				const elapsed = Date.now() - startTime;
+				if (elapsed >= timeoutMs) {
+					const timeoutMsg =
+						'The job took too long to complete. Polling timed out.';
+					setError(timeoutMsg);
+					setPhase('failed');
+					setStoredJob(storageKey, {
+						jobId: jobId!,
+						operation: apiOperation,
+						category: operation.category,
+						slug: operation.slug,
+						fileName: activeFileRef.current?.name ?? 'file',
+						fileSize: activeFileRef.current?.size ?? 0,
+						phase: 'failed',
+						startedAt: startTime,
+						error: timeoutMsg,
+					});
+					return;
+				}
+
+				setError(userFacingError(err));
 			}
 		}
 
@@ -264,12 +429,15 @@ export default function OperationUpload({
 			cancelled = true;
 			window.clearInterval(timer);
 		};
-	}, [phase, jobId, getToken, title]);
+	}, [phase, jobId, isLoaded, getToken, title, storageKey, apiOperation, operation]);
 
 	function chooseFile(next: File) {
+		clearStoredJob(storageKey);
+		setRestoredFileInfo(null);
 		setError(null);
 		setPhase('idle');
 		setJobId(null);
+		setPollStartedAt(null);
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
@@ -293,10 +461,13 @@ export default function OperationUpload({
 	}
 
 	function resetFile() {
+		clearStoredJob(storageKey);
+		setRestoredFileInfo(null);
 		setFile(null);
 		setError(null);
 		setPhase('idle');
 		setJobId(null);
+		setPollStartedAt(null);
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
@@ -355,6 +526,18 @@ export default function OperationUpload({
 
 			setJobId(presign.job_id);
 			setPhase('uploaded');
+
+			setStoredJob(storageKey, {
+				jobId: presign.job_id,
+				operation: apiOperation,
+				category: operation.category,
+				slug: operation.slug,
+				fileName: file.name,
+				fileSize: file.size,
+				phase: 'uploaded',
+				startedAt: Date.now(),
+				outputFormat,
+			});
 		} catch (err) {
 			setPhase('idle');
 			setError(userFacingError(err));
@@ -371,9 +554,25 @@ export default function OperationUpload({
 
 		try {
 			const result = await startJob(jobId, getToken);
+			const now = Date.now();
 			setCreditsRemaining(result.credits_remaining);
 			setStatusLabel('Waiting');
+			setPollStartedAt(now);
 			setPhase('polling');
+
+			setStoredJob(storageKey, {
+				jobId,
+				operation: apiOperation,
+				category: operation.category,
+				slug: operation.slug,
+				fileName: activeFile?.name ?? 'file',
+				fileSize: activeFile?.size ?? 0,
+				phase: 'polling',
+				startedAt: now,
+				statusLabel: 'Waiting',
+				creditsRemaining: result.credits_remaining,
+				outputFormat,
+			});
 		} catch (err) {
 			setPhase('uploaded');
 			setError(userFacingError(err));
@@ -405,7 +604,7 @@ export default function OperationUpload({
 		maxHeight: Number(maxHeight),
 	});
 
-	if (!file) {
+	if (!activeFile) {
 		return (
 			<section className="mt-10">
 				{errorAlert}
@@ -490,11 +689,11 @@ export default function OperationUpload({
 					</p>
 
 					<p className="mt-3 truncate text-xl font-semibold tracking-[-0.025em]">
-						{file.name}
+						{activeFile.name}
 					</p>
 
 					<p className="mt-1 text-sm text-base-content/45">
-						{getFileLabel(file)} · {formatBytes(file.size)}
+						{getFileLabel(activeFile.name)} · {formatBytes(activeFile.size)}
 					</p>
 				</div>
 
@@ -758,17 +957,22 @@ export default function OperationUpload({
 						<>
 							<div className="mt-4 flex flex-wrap items-center gap-3">
 								<span className="badge badge-error badge-soft">
-									Couldn&apos;t finish
+									{error?.toLowerCase().includes('timed out')
+										? 'Timed out'
+										: "Couldn't finish"}
 								</span>
 							</div>
 
 							<h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em]">
-								Conversion failed
+								{error?.toLowerCase().includes('timed out')
+									? 'Processing timed out'
+									: 'Conversion failed'}
 							</h2>
 
 							<p className="mt-3 max-w-xl leading-7 text-base-content/50">
-								Try a different file, or start over with the
-								same tool.
+								{error?.toLowerCase().includes('timed out')
+									? 'The operation took too long to complete. Try again or check back later.'
+									: 'Try a different file, or start over with the same tool.'}
 							</p>
 
 							<div className="mt-10 flex flex-wrap items-center gap-3 border-t border-base-300 pt-6">

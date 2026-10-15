@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	buildPresignRequest,
 	createPresignedUpload,
+	getJobPollIntervalMs,
+	getJobPollTimeoutMs,
 	getOperationOptions,
 	pollJobStatus,
 	startJob,
@@ -119,3 +121,33 @@ describe('job API flow', () => {
 		await expect(createPresignedUpload({ operation: 'compress', filename: 'photo.jpg', content_type: 'image/jpeg', operation_options: { target_size_bytes: 1000 } })).rejects.toMatchObject({ status: 403, message: 'Not allowed' });
 	});
 });
+
+describe('poll configuration', () => {
+	it('provides valid defaults for poll interval and timeout', () => {
+		expect(getJobPollIntervalMs()).toBeGreaterThanOrEqual(500);
+		expect(getJobPollTimeoutMs()).toBeGreaterThanOrEqual(1000);
+	});
+
+	it('respects valid PUBLIC_JOB_POLL_TIMEOUT_MS override', () => {
+		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', '45000');
+		expect(getJobPollTimeoutMs()).toBe(45000);
+		vi.unstubAllEnvs();
+	});
+
+	it('falls back when PUBLIC_JOB_POLL_TIMEOUT_MS is invalid or too small', () => {
+		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', 'not-a-number');
+		expect(getJobPollTimeoutMs()).toBe(60000);
+
+		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', '500');
+		expect(getJobPollTimeoutMs()).toBe(60000);
+		vi.unstubAllEnvs();
+	});
+
+	it('respects valid PUBLIC_JOB_POLL_INTERVAL_MS override', () => {
+		vi.stubEnv('PUBLIC_JOB_POLL_INTERVAL_MS', '5000');
+		expect(getJobPollIntervalMs()).toBe(5000);
+		vi.unstubAllEnvs();
+	});
+});
+
+

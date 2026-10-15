@@ -299,3 +299,16 @@ export function getJobPollIntervalMs(): number {
 
 	return 3000;
 }
+
+/** Hard time limit for job status polling in ms. Override with PUBLIC_JOB_POLL_TIMEOUT_MS. Default: 60000ms (1 minute). */
+export function getJobPollTimeoutMs(): number {
+	const raw = import.meta.env.PUBLIC_JOB_POLL_TIMEOUT_MS;
+	const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+
+	if (Number.isFinite(parsed) && parsed >= 1000) {
+		return parsed;
+	}
+
+	return 60000;
+}
+

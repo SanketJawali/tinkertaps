@@ -135,7 +135,10 @@ On failure:
 PROCESSING → FAILED
 ```
 
-The exception is re-raised so the Lambda/SQS integration knows that the record failed.
+Processing errors are recorded as `FAILED` in PostgreSQL and the SQS message is
+explicitly deleted after the record is handled. If the worker crashes before
+acknowledging the message, SQS makes it visible again after the visibility
+timeout.
 
 ### Atomic job claim
 
@@ -152,13 +155,14 @@ UPDATE jobs
 SET status = 'PROCESSING',
     started_at = NOW()
 WHERE id = :job_id
-  AND status IN ('PENDING', 'FAILED')
+  AND status = 'PENDING'
 RETURNING ...;
 ```
 
 This prevents a second invocation from claiming a job that another invocation already claimed.
 
-The worker currently allows `FAILED` jobs to be retried and increments `retry_count`.
+`FAILED` jobs are terminal and are not claimed again. `retry_count` records the
+number of processing attempts, which is normally one.
 
 ---
 

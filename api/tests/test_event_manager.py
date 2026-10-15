@@ -22,11 +22,13 @@ async def test_start_connects_to_postgres_and_registers_listener():
 
 async def test_stop_closes_the_database_connection():
     manager = JobEventManager()
-    manager.conn = AsyncMock()
+    connection = AsyncMock()
+    manager.conn = connection
 
     await manager.stop()
 
-    manager.conn.close.assert_awaited_once_with()
+    connection.close.assert_awaited_once_with()
+    assert manager.conn is None
 
 
 async def test_publish_delivers_event_to_subscriber():

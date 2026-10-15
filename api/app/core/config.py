@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
 
-    migration_db_user: str
-    migration_db_password: str
+    migration_db_host: str = "postgres"
+    migration_db_user: str = "tinkertaps_migrator"
+    migration_db_password: str = ""
 
     cors_origins: list[str] = Field(default_factory=lambda: [
                                     "http://localhost:4321"])
@@ -37,8 +38,8 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
-    aws_internal_endpoint_url: str
-    aws_public_endpoint_url: str
+    aws_internal_endpoint_url: str = "http://floci:4566"
+    aws_public_endpoint_url: str = "http://localhost:4566"
 
     # S3 / object storage
     s3_bucket_name: str = ""
@@ -46,8 +47,8 @@ class Settings(BaseSettings):
     s3_download_presign_expiry_seconds: int = 3600
 
     # SQS Queue
-    sqs_queue_url: str
-    sqs_queue_name: str
+    sqs_queue_url: str = "http://floci:4566/000000000000/tinkertaps-jobs"
+    sqs_queue_name: str = "tinkertaps-jobs"
 
     # Redis job queue
     redis_url: str = "redis://localhost:6379/0"
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
                 scheme="postgresql+asyncpg",
                 username=self.migration_db_user,
                 password=self.migration_db_password,
-                host=self.db_host,
+                host=self.migration_db_host,
                 port=self.db_port,
                 path=self.db_name,
             )

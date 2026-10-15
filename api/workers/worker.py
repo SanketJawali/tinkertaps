@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 from app.models.jobs import Job, JobStatus, Operation
+from app.services.job_queue import delete_message
 
 from scripts.image.format_convertor import convert_image
 from scripts.image.compress_image import compress_image
@@ -187,7 +188,8 @@ async def claim_job(
     """
     Atomically claim a job.
 
-    Only PENDING or FAILED jobs can be claimed.
+    Only PENDING jobs can be claimed. A failed job is terminal and must not
+    be processed again if its SQS message is delivered more than once.
 
     The important part is that the status check and status update
     happen inside the same SQL UPDATE statement.
@@ -205,7 +207,6 @@ async def claim_job(
             Job.status.in_(
                 [
                     JobStatus.PENDING,
-                    JobStatus.FAILED,
                 ]
             ),
         )
@@ -390,8 +391,8 @@ async def mark_job_failed(
     """
     Mark a job as FAILED.
 
-    The exception is still re-raised by process_job() afterwards so
-    Lambda/SQS knows that this particular record failed.
+    The exception is still re-raised by process_job() afterwards so the event
+    handler can record the processing error before acknowledging the message.
     """
 
     error_message = str(error)
@@ -609,9 +610,9 @@ async def handle_event(event: dict[str, Any]) -> dict[str, Any]:
     the loop created by asyncio.run() is closed. This prevents asyncpg/
     SQLAlchemy connections from being reused across different event loops.
 
-    Returns partial batch failures so that a failed message can be
-    retried without forcing successful messages in the same batch
-    to be retried.
+    Processing errors are acknowledged after being persisted as FAILED. A
+    record is returned as a batch failure only when its SQS message cannot be
+    acknowledged, allowing visibility timeout recovery after a worker crash.
     """
 
     engine, session_local = create_db()
@@ -628,6 +629,7 @@ async def handle_event(event: dict[str, Any]) -> dict[str, Any]:
 
         for record in records:
             message_id = record.get("messageId")
+            receipt_handle = record.get("receiptHandle")
 
             try:
                 body = json.loads(record["body"])
@@ -650,12 +652,35 @@ async def handle_event(event: dict[str, Any]) -> dict[str, Any]:
                     message_id,
                 )
 
-                if message_id:
-                    batch_item_failures.append(
-                        {
-                            "itemIdentifier": message_id,
-                        }
+            finally:
+                if not receipt_handle:
+                    logger.error(
+                        "Cannot acknowledge SQS message %s: receipt handle is missing",
+                        message_id,
                     )
+                    if message_id:
+                        batch_item_failures.append(
+                            {"itemIdentifier": message_id}
+                        )
+                else:
+                    try:
+                        await asyncio.to_thread(
+                            delete_message,
+                            receipt_handle,
+                        )
+                        logger.info(
+                            "Acknowledged SQS message %s",
+                            message_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to acknowledge SQS message %s",
+                            message_id,
+                        )
+                        if message_id:
+                            batch_item_failures.append(
+                                {"itemIdentifier": message_id}
+                            )
 
         return {
             "batchItemFailures": batch_item_failures,

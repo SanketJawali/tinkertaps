@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -13,8 +14,14 @@ from app.main import create_app, lifespan
 async def app():
     """FastAPI app with lifespan startup/shutdown managed per test."""
     application = create_app()
-    async with lifespan(application):
-        yield application
+    event_manager = AsyncMock()
+    engine = AsyncMock()
+    with (
+        patch("app.main.JobEventManager", return_value=event_manager),
+        patch("app.main.engine", engine),
+    ):
+        async with lifespan(application):
+            yield application
 
 
 @pytest.fixture

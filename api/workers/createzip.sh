@@ -15,20 +15,21 @@ cp -r ../app "$PACKAGE_DIR/"
 
 echo "Installing dependencies..."
 uv pip install \
-    --target "$PACKAGE_DIR" \
-    boto3 \
-    'sqlalchemy[asyncio]' \
-    asyncpg \
-    pillow \
-    pydantic \
-    pydantic-settings
+  --python 3.12 \
+  --target "$PACKAGE_DIR" \
+  boto3 \
+  'sqlalchemy[asyncio]' \
+  asyncpg \
+  pillow \
+  pydantic \
+  pydantic-settings
 
 echo "Creating ZIP..."
 rm -f "$ZIP_FILE"
 
 (
-    cd "$PACKAGE_DIR"
-    zip -r "$ZIP_FILE" .
+  cd "$PACKAGE_DIR"
+  zip -r "$ZIP_FILE" .
 )
 
 echo
