@@ -12,7 +12,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.session import engine
-from app.db.eventManager import JobEventManager
+from app.db.eventManager import get_job_event_manager
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 
@@ -27,11 +27,11 @@ async def lifespan(app: FastAPI):
         settings.app_name,
         settings.environment,
     )
-    JobEventManagerInstance = JobEventManager()
-    await JobEventManagerInstance.start()
+    event_manager = get_job_event_manager()
+    await event_manager.start()
     yield
     await engine.dispose()
-    await JobEventManagerInstance.stop()
+    await event_manager.stop()
     logger.info("Database connections closed")
 
 

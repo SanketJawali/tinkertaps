@@ -17,7 +17,7 @@ async def app():
     event_manager = AsyncMock()
     engine = AsyncMock()
     with (
-        patch("app.main.JobEventManager", return_value=event_manager),
+        patch("app.main.get_job_event_manager", return_value=event_manager),
         patch("app.main.engine", engine),
     ):
         async with lifespan(application):

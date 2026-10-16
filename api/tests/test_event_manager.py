@@ -40,6 +40,18 @@ async def test_publish_delivers_event_to_subscriber():
     assert await queue.get() == event
 
 
+def test_new_subscription_replaces_existing_subscription():
+    manager = JobEventManager()
+    first_queue = manager.subscribe("job-123")
+    second_queue = manager.subscribe("job-123")
+
+    event = {"status": "processing"}
+
+    assert manager.publish("job-123", event) is True
+    assert first_queue.empty()
+    assert second_queue.get_nowait() == event
+
+
 def test_publish_returns_false_without_subscriber():
     manager = JobEventManager()
 
@@ -81,7 +93,7 @@ async def test_lifespan_starts_and_stops_event_manager():
     app_engine = AsyncMock()
 
     with (
-        patch("app.main.JobEventManager", return_value=manager),
+        patch("app.main.get_job_event_manager", return_value=manager),
         patch("app.main.engine", app_engine),
     ):
         from app.main import lifespan

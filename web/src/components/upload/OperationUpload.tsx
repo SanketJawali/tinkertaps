@@ -5,11 +5,10 @@ import {
 	ApiError,
 	buildPresignRequest,
 	createPresignedUpload,
-	getJobPollIntervalMs,
-	getJobPollTimeoutMs,
+	getJobStatus,
 	getOperationOptions,
-	pollJobStatus,
 	startJob,
+	streamJobStatus,
 	uploadFileToPresignedUrl,
 	type JobOperation,
 } from '../../lib/api/jobs';
@@ -26,7 +25,7 @@ type Phase =
 	| 'uploading'
 	| 'uploaded'
 	| 'starting'
-	| 'polling'
+	| 'streaming'
 	| 'completed'
 	| 'failed';
 
@@ -177,7 +176,7 @@ export default function OperationUpload({
 	const [error, setError] = useState<string | null>(null);
 	const [phase, setPhase] = useState<Phase>('idle');
 	const [jobId, setJobId] = useState<string | null>(null);
-	const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
+	const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(
 		null,
 	);
@@ -207,8 +206,8 @@ export default function OperationUpload({
 	creditsRemainingRef.current = creditsRemaining;
 	const outputFormatRef = useRef(outputFormat);
 	outputFormatRef.current = outputFormat;
-	const pollStartedAtRef = useRef(pollStartedAt);
-	pollStartedAtRef.current = pollStartedAt;
+	const streamStartedAtRef = useRef(streamStartedAt);
+	streamStartedAtRef.current = streamStartedAt;
 
 	// Restore active job from localStorage on initial mount
 	useEffect(() => {
@@ -222,8 +221,8 @@ export default function OperationUpload({
 			name: stored.fileName,
 			size: stored.fileSize,
 		});
-		setPhase(stored.phase);
-		setPollStartedAt(stored.startedAt);
+		setPhase(stored.phase === 'polling' ? 'streaming' : stored.phase);
+		setStreamStartedAt(stored.startedAt);
 		if (stored.statusLabel) {
 			setStatusLabel(stored.statusLabel);
 		}
@@ -248,186 +247,72 @@ export default function OperationUpload({
 	}, [storageKey]);
 
 	useEffect(() => {
-		if (phase !== 'polling' || !jobId || !isLoaded) {
+		if (phase !== 'streaming' || !jobId || !isLoaded) {
 			return;
 		}
 
 		let cancelled = false;
-		const intervalMs = getJobPollIntervalMs();
-		const timeoutMs = getJobPollTimeoutMs();
-		const startTime = pollStartedAtRef.current || Date.now();
-		if (!pollStartedAtRef.current) {
-			pollStartedAtRef.current = startTime;
-			setPollStartedAt(startTime);
+		const controller = new AbortController();
+		const startTime = streamStartedAtRef.current || Date.now();
+		if (!streamStartedAtRef.current) {
+			streamStartedAtRef.current = startTime;
+			setStreamStartedAt(startTime);
 		}
 
-		async function tick() {
+		async function connect() {
 			try {
-				const result = await pollJobStatus(jobId!, getToken);
+				await streamJobStatus(jobId, getToken, async (event) => {
+					if (cancelled) return;
+					if (event.status === 'pending') setStatusLabel('Waiting');
+					if (event.status === 'processing') setStatusLabel('Working on it');
+					setStoredJob(storageKey, {
+						jobId,
+						operation: apiOperation,
+						category: operation.category,
+						slug: operation.slug,
+						fileName: activeFileRef.current?.name ?? 'file',
+						fileSize: activeFileRef.current?.size ?? 0,
+						phase: 'streaming',
+						statusLabel: event.status === 'pending' ? 'Waiting' : 'Working on it',
+						startedAt: startTime,
+						expiresAt: startTime + 60 * 60 * 1000,
+						creditsRemaining: creditsRemainingRef.current,
+						outputFormat: outputFormatRef.current,
+					});
 
-				if (cancelled) {
-					return;
-				}
+					if (event.status !== 'completed' && event.status !== 'failed') return;
 
-				if (result.status === 'completed') {
-					if (!result.download_url) {
-						const missingMsg =
-							'The file is ready, but the download link is missing. Try again.';
-						setError(missingMsg);
-						setPhase('failed');
-						setStoredJob(storageKey, {
-							jobId: jobId!,
-							operation: apiOperation,
-							category: operation.category,
-							slug: operation.slug,
-							fileName: activeFileRef.current?.name ?? 'file',
-							fileSize: activeFileRef.current?.size ?? 0,
-							phase: 'failed',
-							startedAt: startTime,
-							error: missingMsg,
-						});
+					const result = await getJobStatus(jobId, getToken);
+					if (result.status === 'completed' && result.download_url) {
+						const finalFilename = result.filename ?? result.output_filename ?? result.download_filename ?? null;
+						const serverFilename = finalFilename;
+						const finalFormat = serverFilename?.split('.').pop()?.toUpperCase() ?? outputFormatRef.current;
+						setDownloadUrl(result.download_url);
+						setDownloadExpiresIn(result.download_expires_in);
+						setDownloadFilename(finalFilename);
+						setOutputFormat(finalFormat);
+						setPhase('completed');
+						setStoredJob(storageKey, { jobId, operation: apiOperation, category: operation.category, slug: operation.slug, fileName: activeFileRef.current?.name ?? 'file', fileSize: activeFileRef.current?.size ?? 0, phase: 'completed', startedAt: startTime, expiresAt: Date.now() + (result.download_expires_in ?? 3600) * 1000, downloadUrl: result.download_url, downloadExpiresIn: result.download_expires_in, downloadFilename: finalFilename, outputFormat: finalFormat });
+						controller.abort();
 						return;
 					}
 
-					setDownloadUrl(result.download_url);
-					setDownloadExpiresIn(result.download_expires_in);
-					const finalFilename =
-						result.filename ??
-						result.output_filename ??
-						result.download_filename ??
-						null;
-					setDownloadFilename(finalFilename);
-
-					const serverFilename =
-						result.filename ??
-						result.output_filename ??
-						result.download_filename;
-					let finalFormat = outputFormatRef.current;
-					if (serverFilename) {
-						finalFormat =
-							serverFilename.split('.').pop()?.toUpperCase() ??
-							operation.outputFormat;
-						setOutputFormat(finalFormat);
-					}
-
-					setPhase('completed');
-					setStoredJob(storageKey, {
-						jobId: jobId!,
-						operation: apiOperation,
-						category: operation.category,
-						slug: operation.slug,
-						fileName: activeFileRef.current?.name ?? 'file',
-						fileSize: activeFileRef.current?.size ?? 0,
-						phase: 'completed',
-						startedAt: startTime,
-						downloadUrl: result.download_url,
-						downloadExpiresIn: result.download_expires_in,
-						downloadFilename: finalFilename,
-						outputFormat: finalFormat,
-					});
-					return;
-				}
-
-				if (result.status === 'failed') {
-					const failureMsg =
-						result.error_message?.trim() ||
-						`We couldn't finish ${title.toLowerCase()}.`;
-					setError(failureMsg);
+					const failureMsg = result.error_message?.trim() || `We couldn't finish ${title.toLowerCase()}.`;
+					setError(result.status === 'completed' ? 'The file is ready, but the download link is missing. Try again.' : failureMsg);
 					setPhase('failed');
-					setStoredJob(storageKey, {
-						jobId: jobId!,
-						operation: apiOperation,
-						category: operation.category,
-						slug: operation.slug,
-						fileName: activeFileRef.current?.name ?? 'file',
-						fileSize: activeFileRef.current?.size ?? 0,
-						phase: 'failed',
-						startedAt: startTime,
-						error: failureMsg,
-					});
-					return;
-				}
-
-				// Check if the polling has exceeded the hard time limit
-				const elapsed = Date.now() - startTime;
-				if (elapsed >= timeoutMs) {
-					const timeoutMsg =
-						'The job took too long to complete. Polling timed out.';
-					setError(timeoutMsg);
-					setPhase('failed');
-					setStoredJob(storageKey, {
-						jobId: jobId!,
-						operation: apiOperation,
-						category: operation.category,
-						slug: operation.slug,
-						fileName: activeFileRef.current?.name ?? 'file',
-						fileSize: activeFileRef.current?.size ?? 0,
-						phase: 'failed',
-						startedAt: startTime,
-						error: timeoutMsg,
-					});
-					return;
-				}
-
-				let label = 'Working on it';
-				if (result.status === 'pending') {
-					label = 'Waiting';
-					setStatusLabel('Waiting');
-				} else if (result.status === 'processing') {
-					label = 'Working on it';
-					setStatusLabel('Working on it');
-				}
-
-				setStoredJob(storageKey, {
-					jobId: jobId!,
-					operation: apiOperation,
-					category: operation.category,
-					slug: operation.slug,
-					fileName: activeFileRef.current?.name ?? 'file',
-					fileSize: activeFileRef.current?.size ?? 0,
-					phase: 'polling',
-					statusLabel: label,
-					startedAt: startTime,
-					creditsRemaining: creditsRemainingRef.current,
-					outputFormat: outputFormatRef.current,
-				});
+					setStoredJob(storageKey, { jobId, operation: apiOperation, category: operation.category, slug: operation.slug, fileName: activeFileRef.current?.name ?? 'file', fileSize: activeFileRef.current?.size ?? 0, phase: 'failed', startedAt: startTime, expiresAt: Date.now() + 60 * 60 * 1000, error: result.status === 'completed' ? 'The file is ready, but the download link is missing. Try again.' : failureMsg });
+					controller.abort();
+				}, controller.signal);
 			} catch (err) {
-				if (cancelled) {
-					return;
-				}
-
-				const elapsed = Date.now() - startTime;
-				if (elapsed >= timeoutMs) {
-					const timeoutMsg =
-						'The job took too long to complete. Polling timed out.';
-					setError(timeoutMsg);
-					setPhase('failed');
-					setStoredJob(storageKey, {
-						jobId: jobId!,
-						operation: apiOperation,
-						category: operation.category,
-						slug: operation.slug,
-						fileName: activeFileRef.current?.name ?? 'file',
-						fileSize: activeFileRef.current?.size ?? 0,
-						phase: 'failed',
-						startedAt: startTime,
-						error: timeoutMsg,
-					});
-					return;
-				}
-
-				setError(userFacingError(err));
+				if (!cancelled) setError(userFacingError(err));
 			}
 		}
 
-		void tick();
-		const timer = window.setInterval(() => {
-			void tick();
-		}, intervalMs);
+		void connect();
 
 		return () => {
 			cancelled = true;
-			window.clearInterval(timer);
+			controller.abort();
 		};
 	}, [phase, jobId, isLoaded, getToken, title, storageKey, apiOperation, operation]);
 
@@ -437,7 +322,7 @@ export default function OperationUpload({
 		setError(null);
 		setPhase('idle');
 		setJobId(null);
-		setPollStartedAt(null);
+		setStreamStartedAt(null);
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
@@ -467,7 +352,7 @@ export default function OperationUpload({
 		setError(null);
 		setPhase('idle');
 		setJobId(null);
-		setPollStartedAt(null);
+		setStreamStartedAt(null);
 		setCreditsRemaining(null);
 		setDownloadUrl(null);
 		setDownloadExpiresIn(null);
@@ -536,6 +421,7 @@ export default function OperationUpload({
 				fileSize: file.size,
 				phase: 'uploaded',
 				startedAt: Date.now(),
+				expiresAt: Date.now() + 60 * 60 * 1000,
 				outputFormat,
 			});
 		} catch (err) {
@@ -557,8 +443,8 @@ export default function OperationUpload({
 			const now = Date.now();
 			setCreditsRemaining(result.credits_remaining);
 			setStatusLabel('Waiting');
-			setPollStartedAt(now);
-			setPhase('polling');
+			setStreamStartedAt(now);
+			setPhase('streaming');
 
 			setStoredJob(storageKey, {
 				jobId,
@@ -567,8 +453,9 @@ export default function OperationUpload({
 				slug: operation.slug,
 				fileName: activeFile?.name ?? 'file',
 				fileSize: activeFile?.size ?? 0,
-				phase: 'polling',
+				phase: 'streaming',
 				startedAt: now,
+				expiresAt: now + 60 * 60 * 1000,
 				statusLabel: 'Waiting',
 				creditsRemaining: result.credits_remaining,
 				outputFormat,
@@ -815,7 +702,7 @@ export default function OperationUpload({
 			{(phase === 'uploading' ||
 				phase === 'uploaded' ||
 				phase === 'starting' ||
-				phase === 'polling' ||
+				phase === 'streaming' ||
 				phase === 'completed' ||
 				phase === 'failed') && (
 				<div className="mt-8 rounded-box border border-base-300 p-7 sm:p-9">
@@ -877,7 +764,7 @@ export default function OperationUpload({
 						</>
 					)}
 
-					{phase === 'polling' && (
+					{phase === 'streaming' && (
 						<>
 							<div className="mt-4 flex flex-wrap items-center gap-3">
 								<span className="badge badge-neutral badge-soft">

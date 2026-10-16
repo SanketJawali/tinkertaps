@@ -43,8 +43,8 @@ describe('jobStorage', () => {
 			operation: 'jpeg_to_png',
 			fileName: 'photo.jpg',
 			fileSize: 1024,
-			phase: 'polling',
-			startedAt: 1234567890,
+			phase: 'streaming',
+			startedAt: Date.now(),
 			statusLabel: 'Waiting',
 		};
 
@@ -67,6 +67,21 @@ describe('jobStorage', () => {
 	it('returns null and clears data missing required fields', () => {
 		const key = getJobStorageKey('jpeg_to_png');
 		mockStorage[key] = JSON.stringify({ jobId: 'only-job-id' });
+
+		expect(getStoredJob(key)).toBeNull();
+		expect(mockStorage[key]).toBeUndefined();
+	});
+
+	it('clears expired job data', () => {
+		const key = getJobStorageKey('compress');
+		mockStorage[key] = JSON.stringify({
+			jobId: 'job-123',
+			fileName: 'photo.jpg',
+			fileSize: 1024,
+			phase: 'completed',
+			startedAt: Date.now() - 3600000,
+			expiresAt: Date.now() - 1,
+		});
 
 		expect(getStoredJob(key)).toBeNull();
 		expect(mockStorage[key]).toBeUndefined();

@@ -14,7 +14,7 @@ class JobEventManager:
     CHANNEL = "job_status_updates"
 
     def __init__(self):
-        self._subscribers = {}
+        self._subscribers: dict[str, asyncio.Queue] = {}
         self.conn: asyncpg.Connection | None = None
 
     async def start(self):
@@ -40,6 +40,7 @@ class JobEventManager:
         if self.conn is not None:
             await self.conn.close()
             self.conn = None
+        self._subscribers.clear()
 
         logger.info("Job event listener stopped")
 
@@ -66,7 +67,7 @@ class JobEventManager:
             Queue that will receive status updates for the job.
         """
         queue = asyncio.Queue(maxsize=100)
-        self._subscribers[job_id] = queue
+        self._subscribers[str(job_id)] = queue
         logger.debug("Subscribed to job_id %s, total subscribers: %d",
                      job_id,
                      len(self._subscribers)
@@ -78,10 +79,13 @@ class JobEventManager:
             Unsubscribe from events for a specific job ID.
             Removes the provided asyncio.Queue from the list of subscribers for the job.
         """
-        self._subscribers.pop(job_id, None)
+        current_queue = self._subscribers.get(str(job_id))
+        if current_queue is None or current_queue is not queue:
+            return
+        self._subscribers.pop(str(job_id), None)
 
     def publish(self, job_id: str, event: dict) -> bool:
-        queue = self._subscribers.get(job_id, None)
+        queue = self._subscribers.get(str(job_id))
         if queue is None:
             logger.info(
                 "No subscribers for job_id %s, event not published", job_id

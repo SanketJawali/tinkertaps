@@ -43,7 +43,7 @@ export type StartJobResponse = {
 	credits_remaining: number;
 };
 
-export type JobStatusPollResponse = {
+export type JobStatusResponse = {
 	id: string;
 	status: JobStatus;
 	operation: JobOperation;
@@ -53,6 +53,11 @@ export type JobStatusPollResponse = {
 	filename?: string | null;
 	output_filename?: string | null;
 	download_filename?: string | null;
+};
+
+export type JobStatusEvent = {
+	id: string;
+	status: JobStatus;
 };
 
 export class ApiError extends Error {
@@ -268,11 +273,11 @@ export async function startJob(
 	return (await response.json()) as StartJobResponse;
 }
 
-export async function pollJobStatus(
+export async function getJobStatus(
 	jobId: string,
 	getToken?: () => Promise<string | null>,
-): Promise<JobStatusPollResponse> {
-	const response = await fetch(`/api/jobs/${jobId}/job-status-poll`, {
+): Promise<JobStatusResponse> {
+	const response = await fetch(`/api/jobs/${jobId}/status`, {
 		method: 'GET',
 		credentials: 'include',
 		headers: await authHeaders(getToken),
@@ -285,30 +290,91 @@ export async function pollJobStatus(
 		);
 	}
 
-	return (await response.json()) as JobStatusPollResponse;
+	return (await response.json()) as JobStatusResponse;
 }
 
-/** Poll interval in ms. Override with PUBLIC_JOB_POLL_INTERVAL_MS. */
-export function getJobPollIntervalMs(): number {
-	const raw = import.meta.env.PUBLIC_JOB_POLL_INTERVAL_MS;
-	const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+export async function streamJobStatus(
+	jobId: string,
+	getToken: (() => Promise<string | null>) | undefined,
+	onEvent: (event: JobStatusEvent) => void | Promise<void>,
+	signal: AbortSignal,
+): Promise<void> {
+	let retryDelayMs = 1000;
 
-	if (Number.isFinite(parsed) && parsed >= 500) {
-		return parsed;
+	while (!signal.aborted) {
+		try {
+			const response = await fetch(`/api/jobs/${jobId}/status_sse`, {
+				method: 'GET',
+				credentials: 'include',
+				headers: await authHeaders(getToken),
+				signal,
+			});
+
+			if (!response.ok) {
+				throw await parseError(
+					response,
+					"We couldn't connect to your job updates. Try again.",
+				);
+			}
+
+			if (!response.body) {
+				throw new Error('The job update stream is unavailable.');
+			}
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (!signal.aborted) {
+				const { done, value } = await reader.read();
+				buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+
+				const frames = buffer.split(/\r?\n\r?\n/);
+				buffer = frames.pop() ?? '';
+
+				for (const frame of frames) {
+					const data = frame
+						.split(/\r?\n/)
+						.filter((line) => line.startsWith('data:'))
+						.map((line) => line.slice(5).trimStart())
+						.join('\n');
+
+					if (!data) {
+						continue;
+					}
+
+					await onEvent(JSON.parse(data) as JobStatusEvent);
+				}
+
+				if (done) {
+					break;
+				}
+			}
+
+			if (signal.aborted) {
+				return;
+			}
+
+			retryDelayMs = 1000;
+		} catch (error) {
+			if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+				return;
+			}
+
+			if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+				throw error;
+			}
+		}
+
+		await new Promise<void>((resolve) => {
+			const timeout = globalThis.setTimeout(resolve, retryDelayMs);
+			signal.addEventListener('abort', () => {
+				globalThis.clearTimeout(timeout);
+				resolve();
+			}, { once: true });
+		});
+		retryDelayMs = Math.min(retryDelayMs * 2, 10000);
 	}
-
-	return 3000;
 }
 
-/** Hard time limit for job status polling in ms. Override with PUBLIC_JOB_POLL_TIMEOUT_MS. Default: 60000ms (1 minute). */
-export function getJobPollTimeoutMs(): number {
-	const raw = import.meta.env.PUBLIC_JOB_POLL_TIMEOUT_MS;
-	const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
-
-	if (Number.isFinite(parsed) && parsed >= 1000) {
-		return parsed;
-	}
-
-	return 60000;
-}
 

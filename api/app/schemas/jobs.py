@@ -77,7 +77,7 @@ class StartJobResponse(BaseModel):
     credits_remaining: int
 
 
-class JobStatusPollResponse(BaseModel):
+class JobStatusResponse(BaseModel):
     id: uuid.UUID
     status: JobStatus
     operation: Operation
@@ -102,3 +102,8 @@ class JobRead(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class EventItem(BaseModel):
+    id: uuid.UUID
+    status: JobStatus

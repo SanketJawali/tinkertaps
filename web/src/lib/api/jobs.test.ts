@@ -3,11 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	buildPresignRequest,
 	createPresignedUpload,
-	getJobPollIntervalMs,
-	getJobPollTimeoutMs,
+	getJobStatus,
 	getOperationOptions,
-	pollJobStatus,
 	startJob,
+	streamJobStatus,
 	uploadFileToPresignedUrl,
 } from './jobs';
 import {
@@ -96,7 +95,7 @@ describe('numeric operation options', () => {
 });
 
 describe('job API flow', () => {
-	it('presigns, uploads, starts, and polls successfully', async () => {
+	it('presigns, uploads, starts, and retrieves the final status successfully', async () => {
 		const fetchMock = vi
 			.spyOn(globalThis, 'fetch')
 			.mockResolvedValueOnce(jsonResponse({ job_id: 'job-1', upload_url: 'https://upload', input_key: 'input', expires_in: 60 }))
@@ -107,7 +106,7 @@ describe('job API flow', () => {
 		const presign = await createPresignedUpload({ operation: 'png_to_webp', filename: 'image.png', content_type: 'image/png' });
 		await uploadFileToPresignedUrl(presign.upload_url, new File(['image'], 'image.png', { type: 'image/png' }), 'image/png');
 		await startJob(presign.job_id);
-		const completed = await pollJobStatus(presign.job_id);
+		const completed = await getJobStatus(presign.job_id);
 
 		expect(completed.download_url).toBe('https://download');
 		expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -122,32 +121,36 @@ describe('job API flow', () => {
 	});
 });
 
-describe('poll configuration', () => {
-	it('provides valid defaults for poll interval and timeout', () => {
-		expect(getJobPollIntervalMs()).toBeGreaterThanOrEqual(500);
-		expect(getJobPollTimeoutMs()).toBeGreaterThanOrEqual(1000);
-	});
+	describe('job status stream', () => {
+		it('parses SSE events and sends credentials', async () => {
+			const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(
+					'data: {"id":"job-1","status":"completed"}\n\n',
+					{ status: 200 },
+				),
+			);
+			const events: unknown[] = [];
+			const controller = new AbortController();
 
-	it('respects valid PUBLIC_JOB_POLL_TIMEOUT_MS override', () => {
-		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', '45000');
-		expect(getJobPollTimeoutMs()).toBe(45000);
-		vi.unstubAllEnvs();
-	});
+			await streamJobStatus(
+				'job-1',
+				async () => 'token',
+				(event) => {
+					events.push(event);
+					controller.abort();
+				},
+				controller.signal,
+			);
 
-	it('falls back when PUBLIC_JOB_POLL_TIMEOUT_MS is invalid or too small', () => {
-		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', 'not-a-number');
-		expect(getJobPollTimeoutMs()).toBe(60000);
-
-		vi.stubEnv('PUBLIC_JOB_POLL_TIMEOUT_MS', '500');
-		expect(getJobPollTimeoutMs()).toBe(60000);
-		vi.unstubAllEnvs();
-	});
-
-	it('respects valid PUBLIC_JOB_POLL_INTERVAL_MS override', () => {
-		vi.stubEnv('PUBLIC_JOB_POLL_INTERVAL_MS', '5000');
-		expect(getJobPollIntervalMs()).toBe(5000);
-		vi.unstubAllEnvs();
-	});
+			expect(events).toEqual([{ id: 'job-1', status: 'completed' }]);
+			expect(fetchMock).toHaveBeenCalledWith(
+				'/api/jobs/job-1/status_sse',
+				expect.objectContaining({
+					credentials: 'include',
+					headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+				}),
+			);
+		});
 });
 
 

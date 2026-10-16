@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import PurePosixPath
+from collections.abc import AsyncIterator
 from typing import Any
+import asyncio
 
 from fastapi import HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -16,6 +18,8 @@ from app.core.logging import get_logger
 from app.models.jobs import Job, JobStatus, Operation
 from app.models.users import User
 from app.services import s3, job_queue
+from app.db.eventManager import get_job_event_manager, JobEventManager
+from app.schemas.jobs import EventItem
 
 logger = get_logger(__name__)
 
@@ -149,14 +153,6 @@ async def start_draft_job(
             job_queue.enqueue_job,
             str(job.id)
         )
-        # sqs = job_queue.get_sqs_client()
-        # response = sqs.receive_message(
-        #     QueueUrl=settings.sqs_queue_url,
-        #     MaxNumberOfMessages=1,
-        #     WaitTimeSeconds=1,
-        # )
-        #
-        # print(response)
     except HTTPException:
         user.credits += 1
         job.status = JobStatus.DRAFT
@@ -164,6 +160,43 @@ async def start_draft_job(
         raise
 
     return job
+
+
+async def get_job_status_sse(
+    *,
+    db: AsyncSession,
+    user: User,
+    job_id: uuid.UUID,
+) -> AsyncIterator[EventItem]:
+    event_manager: JobEventManager = get_job_event_manager()
+    event_queue: asyncio.Queue = event_manager.subscribe(str(job_id))
+
+    try:
+        job = await get_job_status_for_user(db=db, user=user, job_id=job_id)
+        yield EventItem(id=job.id, status=job.status)
+
+        if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+            return
+
+        while True:
+            event = await event_queue.get()
+            try:
+                status_update = EventItem(
+                    id=uuid.UUID(str(event["job_id"])),
+                    status=JobStatus(str(event["status"]).lower()),
+                )
+            except (KeyError, TypeError, ValueError):
+                logger.warning(
+                    "Ignoring malformed job status event",
+                    extra={"job_id": str(job_id), "event": event},
+                )
+                continue
+
+            yield status_update
+            if status_update.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+                return
+    finally:
+        event_manager.unsubscribe(str(job_id), event_queue)
 
 
 async def get_job_status_for_user(
@@ -194,7 +227,7 @@ def output_filename_from_key(output_key: str) -> str:
     return name or "download"
 
 
-async def build_job_status_poll(
+async def build_job_status(
     *,
     db: AsyncSession,
     user: User,

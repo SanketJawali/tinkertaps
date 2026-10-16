@@ -11,6 +11,7 @@ from app.main import create_app
 from app.models.jobs import Job, JobStatus, Operation
 from app.models.users import User
 from app.api.deps import get_auth_context
+from app.schemas.jobs import EventItem
 
 
 @pytest.fixture
@@ -282,6 +283,69 @@ async def test_start_job_queue_unavailable(clerk_job_client):
     detail = response.json()["detail"]
     assert detail["code"] == "queue_unavailable"
     assert response.json()["request_id"] is not None
+
+
+async def test_status_sse_streams_event_and_sets_anon_cookie(job_client):
+    client, user = job_client
+    job_id = uuid.uuid4()
+
+    async def fake_status_stream(*, db, user, job_id):
+        yield EventItem(id=job_id, status=JobStatus.COMPLETED)
+
+    with patch(
+        "app.api.routes.job.job_service.get_job_status_sse",
+        new=fake_status_stream,
+    ) as stream_mock:
+        response = await client.get(f"/api/jobs/{job_id}/status_sse")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert f'"id":"{job_id}"' in response.text
+    assert '"status":"completed"' in response.text
+    assert settings.anon_cookie_name in response.cookies
+
+
+async def test_status_sse_streams_current_and_terminal_update(clerk_user: User):
+    from app.db.eventManager import JobEventManager
+    from app.services.jobs import get_job_status_sse
+
+    job_id = uuid.uuid4()
+    job = Job(
+        id=job_id,
+        user_id=clerk_user.id,
+        operation=Operation.CONVERT,
+        status=JobStatus.PENDING,
+        input_key="uploads/input.png",
+    )
+    manager = JobEventManager()
+    db = AsyncMock()
+
+    with (
+        patch("app.services.jobs.get_job_event_manager", return_value=manager),
+        patch(
+            "app.services.jobs.get_job_status_for_user",
+            new=AsyncMock(return_value=job),
+        ),
+    ):
+        stream = get_job_status_sse(db=db, user=clerk_user, job_id=job_id)
+        assert await stream.__anext__() == EventItem(
+            id=job_id,
+            status=JobStatus.PENDING,
+        )
+
+        assert manager.publish(
+            str(job_id),
+            {"job_id": str(job_id), "status": "COMPLETED"},
+        ) is True
+        assert await stream.__anext__() == EventItem(
+            id=job_id,
+            status=JobStatus.COMPLETED,
+        )
+
+        with pytest.raises(StopAsyncIteration):
+            await stream.__anext__()
+
+    assert str(job_id) not in manager._subscribers
 
 
 async def test_build_input_key_sanitizes_filename(clerk_user: User):

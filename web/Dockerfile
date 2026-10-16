@@ -37,11 +37,11 @@
 FROM node:26-alpine AS runtime
 WORKDIR /app
 
-COPY . .
-
+COPY package*.json .
 RUN npm ci
-RUN npm run build
 
+COPY . .
+RUN npm run build
 ENV HOST=0.0.0.0
 ENV PORT=4321
 EXPOSE 4321

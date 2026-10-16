@@ -1,19 +1,21 @@
-from app.services.job_queue import enqueue_job
-from app.core.logging import get_logger
-from app.core.errors import ErrorCode, raise_api_error
-from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, Depends, Response, status
 import uuid
+from fastapi import APIRouter, Depends, Response, status
+from fastapi.concurrency import run_in_threadpool
+from fastapi.sse import EventSourceResponse, format_sse_event
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.job_queue import enqueue_job
+from app.core.logging import get_logger
+from app.core.errors import ErrorCode, raise_api_error
 from app.api.deps import AuthContext, apply_anon_cookie, get_auth_context
 from app.db.session import get_db
 from app.schemas.jobs import (
-    JobStatusPollResponse,
+    JobStatusResponse,
     PresignRequest,
     PresignResponse,
     StartJobResponse,
+    EventItem,
 )
 from app.services import jobs as job_service
 
@@ -61,29 +63,29 @@ async def create_presigned_upload(
 
 
 @router.get(
-    "/{job_id}/job-status-poll",
-    response_model=JobStatusPollResponse,
+    "/{job_id}/status",
+    response_model=JobStatusResponse,
     status_code=status.HTTP_200_OK,
 )
-async def job_status_poll(
+async def job_status(
     job_id: uuid.UUID,
     response: Response,
     db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_auth_context),
-) -> JobStatusPollResponse:
+) -> JobStatusResponse:
     """
-    Return the current job status for polling clients.
+    Return the current job status and, when available, the output details.
 
     When the job is completed, also return a short-lived S3 download URL.
     When failed, include the stored error_message.
     """
-    job, download_url, download_expires_in = await job_service.build_job_status_poll(
+    job, download_url, download_expires_in = await job_service.build_job_status(
         db=db,
         user=auth.user,
         job_id=job_id,
     )
     apply_anon_cookie(response, auth)
-    return JobStatusPollResponse(
+    return JobStatusResponse(
         id=job.id,
         status=job.status,
         operation=job.operation,
@@ -179,3 +181,27 @@ async def start_job(
         input_key=job.input_key,
         credits_remaining=auth.user.credits,
     )
+
+
+@router.get(
+    "/{job_id}/status_sse",
+    status_code=status.HTTP_200_OK,
+)
+async def status_sse(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> EventSourceResponse:
+    async def event_stream():
+        async for event in job_service.get_job_status_sse(
+            db=db,
+            user=auth.user,
+            job_id=job_id,
+        ):
+            yield format_sse_event(data_str=event.model_dump_json())
+
+    response = EventSourceResponse(
+        event_stream()
+    )
+    apply_anon_cookie(response, auth)
+    return response

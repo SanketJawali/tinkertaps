@@ -3,6 +3,7 @@ import type { JobOperation } from './api/jobs';
 export type StoredJobPhase =
 	| 'uploaded'
 	| 'starting'
+	| 'streaming'
 	| 'polling'
 	| 'completed'
 	| 'failed';
@@ -17,6 +18,7 @@ export type StoredJob = {
 	phase: StoredJobPhase;
 	statusLabel?: string;
 	startedAt: number;
+	expiresAt?: number;
 	creditsRemaining?: number | null;
 	downloadUrl?: string | null;
 	downloadExpiresIn?: number | null;
@@ -56,6 +58,17 @@ export function getStoredJob(key: string): StoredJob | null {
 		}
 
 		const data = JSON.parse(raw) as Partial<StoredJob>;
+		const expiresAt =
+			typeof data.expiresAt === 'number'
+				? data.expiresAt
+				: typeof data.startedAt === 'number'
+					? data.startedAt + 60 * 60 * 1000
+					: null;
+		if (expiresAt !== null && expiresAt <= Date.now()) {
+			storage.removeItem(key);
+			return null;
+		}
+
 		if (
 			typeof data.jobId === 'string' &&
 			typeof data.fileName === 'string' &&
